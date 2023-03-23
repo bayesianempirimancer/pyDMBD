@@ -85,7 +85,7 @@ Color gives role and intensity gives assignment pr
 
 
   print('Generating Movie...')
-  batch_nums = (1,2,3)  # batch_indices to use to make movie.  to use all batches batch_nums = list(range(data.shape[1]))
+  batch_nums = (1,2,3)  # batch_indices to use to make movie.  to use all batches: batch_nums = list(range(data.shape[1]))
   f = r"c://Users/brain/Desktop/sbz_movie.mp4"
   ar = animate_results('sbz',f,xlim = (-1.6,1.6), ylim = (-1.2,0.2), fps=10)
   ar.make_movie(v_model, data, batch_nums)
@@ -97,11 +97,14 @@ Color gives role and intensity gives assignment pr
 
  
 The test_dmbd.py shows how to get some simple results on a few data sets:  
+
       A simple implementation of newtons cradle
+
       The life as we know it simulation from Friston 2012
+      
       An artificial life simultion from particle lenia.  Refs needed.  
 
 
-In the interest of completeness.  It is worth nothing that the principle bottleneck here is the unfortunate number of matrix inversions needed to run the forward backward loop when performing inference for the continuous latents.  So keeping the continuous latent space relatively small greatly speeds up run time.  The second principle limitation of this approach is the assumption of linear dynamics for the continuous latents.  However, since the roles effectively implement a non-linear transformation from the continuous latent space to the observables we can rationalize that this approach is still quite general since there is always some non-linear transform in observables that results in linear dynamics.  Anyway, since the computational cost of adding roles is quite modest, the current version of the code instantiates a unique ARHMM for each observable, i.  So every microscopic element can have a unique non-linear relationship with the continuous latents.  This can be turned off by setting unique_obs = False.  This setting forces all of the assignment variables to use the same Transition probability matrix and the same observation matrices C_lambda and D_lambda.  
+In the interest of completeness.  It is worth nothing that the principle bottleneck here is the unfortunate number of matrix inversions needed to run the forward backward loop when performing inference for the continuous latents.  So keeping the continuous latent space relatively small greatly speeds up run time.  The second principle limitation of this approach is the assumption of linear dynamics for the continuous latents.  However, since the roles effectively implement a non-linear transformation from the continuous latent space to the observables we can rationalize that this approach is still quite general since there is always some non-linear transform in observables that results in linear dynamics.  Anyway, since the computational cost of adding roles is quite modest, the current version of the code instantiates a unique ARHMM for each observable, i.  So every microscopic element can have a unique non-linear relationship with the continuous latents.  This can be turned off by setting unique_obs = False.  This setting forces all of the assignment variables associated with the different observables to use the same transition probability matrix and the same observation matrices C_lambda and D_lambda.  There is little computational cost or benefit to be had from changing unique_obs.  
 
  
