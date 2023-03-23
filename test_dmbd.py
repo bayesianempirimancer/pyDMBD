@@ -8,24 +8,24 @@ from matplotlib import cm
 
 print('Test on Newtons Cradle Data')
 from NewtonsCradle import NewtonsCradle
-dmodel = NewtonsCradle(n_balls=5,ball_size=0.2,Tmax=1000,batch_size=20,g=1,leak=0.05/8,dt=0.05) 
+dmodel = NewtonsCradle(n_balls=5,ball_size=0.2,Tmax=1000,batch_size=40,g=1,leak=0.05/8,dt=0.05) 
 
-# data_temp = dmodel.generate_data('random')[0]
-# data_temp = data_temp[0::5]
-# data = data_temp
+data_temp = dmodel.generate_data('random')[0]
+data_temp = data_temp[0::5]
+data = data_temp
 
 data_temp = dmodel.generate_data('1 + 1 ball object')[0]
 data_temp = data_temp[0::5]
-data = data_temp
-#data = torch.cat((data,data_temp),dim=1)
+#data = data_temp
+data = torch.cat((data,data_temp),dim=1)
 
 data_temp = dmodel.generate_data('1 ball object')[0]
 data_temp = data_temp[0::5]
 data = torch.cat((data,data_temp),dim=1)
 
-# data_temp = dmodel.generate_data('2 ball object')[0]
-# data_temp = data_temp[0::5]
-# data = torch.cat((data,data_temp),dim=1)
+data_temp = dmodel.generate_data('2 ball object')[0]
+data_temp = data_temp[0::5]
+data = torch.cat((data,data_temp),dim=1)
 
 # data_temp = dmodel.generate_data('3 ball object')[0]
 # data_temp = data_temp[0::5]
@@ -45,15 +45,15 @@ v_data = torch.diff(data,dim=0)
 data = data[1:]
 data = torch.cat((data,v_data),dim=-1)
 
-model = DMBD(obs_shape=data.shape[-2:],role_dims=(4,4,4),hidden_dims=(2,2,2),batch_shape=(),regression_dim = 0, control_dim=0)
-v_model = DMBD(obs_shape=v_data.shape[-2:],role_dims=(4,4,4),hidden_dims=(2,2,2),regression_dim = 0, control_dim=0)
+model = DMBD(obs_shape=data.shape[-2:],role_dims=(8,8,8),hidden_dims=(4,4,4),batch_shape=(),regression_dim = 0, control_dim=0)
+v_model = DMBD(obs_shape=v_data.shape[-2:],role_dims=(8,8,8),hidden_dims=(4,4,4),regression_dim = 0, control_dim=0)
 
-model.update(data,None,None,iters=20,latent_iters=1,lr=0.5)
-model.update(data,None,None,iters=20,latent_iters=1,lr=1)
+model.update(data,None,None,iters=40,latent_iters=1,lr=0.25)
+model.update(data,None,None,iters=10,latent_iters=1,lr=1)
 print('Generating Movie...')
 f = r"c://Users/brain/Desktop/cradle.mp4"
 ar = animate_results('sbz',f, xlim = (-1.6,1.6), ylim = (-1.2,0.2), fps=10)
-ar.make_movie(model, data, (10,30))
+ar.make_movie(model, data, (20,60,100,140))
 
 sbz=model.px.mean()
 B = model.obs_model.obs_dist.mean()
@@ -63,21 +63,21 @@ else:
     roles = B[...,:-1]@sbz + B[...,-1:]
 sbz = sbz.squeeze()
 roles = roles.squeeze()
-batch_num = 41
+batch_num = 10
 idx = model.obs_model.NA/model.obs_model.NA.sum()>0.001
 plt.plot(roles[:,batch_num,:,0],roles[:,batch_num,:,1])
 plt.show()
 plt.plot(roles[:,batch_num,:,2],roles[:,batch_num,:,3])
 plt.show()
 
-stop
 
-v_model.update(v_data,None,None,iters=20,latent_iters=1,lr=0.5)
-v_model.update(v_data,None,None,iters=20,latent_iters=1,lr=1.0)
+
+v_model.update(v_data,None,None,iters=40,latent_iters=1,lr=0.25)
+v_model.update(v_data,None,None,iters=10,latent_iters=1,lr=1.0)
 print('Generating Movie...')
 f = r"c://Users/brain/Desktop/cradle_v.mp4"
 ar = animate_results('sbz',f,xlim = (-1.6,1.6), ylim = (-1.2,0.2), fps=10)
-ar.make_movie(v_model, data, (10,30,50,70))
+ar.make_movie(v_model, data, (20,60,100,140))
 
 sbz=v_model.px.mean()
 B = v_model.obs_model.obs_dist.mean()
@@ -93,6 +93,9 @@ idx = model.obs_model.NA/model.obs_model.NA.sum()>0.001
 
 plt.plot(roles[:,batch_num,:,0],roles[:,batch_num,:,1])
 plt.show()
+
+
+
 # print('Test on life as we know it data set')
 
 # y_data=np.genfromtxt('ly.txt')
