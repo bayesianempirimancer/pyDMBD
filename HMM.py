@@ -22,6 +22,15 @@ class HMM():
         self.sumlogZ = -torch.inf
         self.p = None
 
+    def to_event(self,n):
+        if n < 1:
+            return self
+        self.event_dim = self.event_dim + n
+        self.batch_dim = self.batch_dim - n
+        self.event_shape = self.batch_shape[-n:] + self.event_shape
+        self.batch_shape = self.batch_shape[:-n]        
+        return self
+
     def logmatmulexp(self,x,y):
 
         x_shift = x.max(-1, keepdim=True)[0]
@@ -142,13 +151,19 @@ class HMM():
                 print('Percent Change in ELBO = %f' % ((ELBO-ELBO_last)/np.abs(ELBO_last)*100))
 
     def Elog_like(self,X):  # assumes that p is up to date
-        return (self.obs_dist.Elog_like(X)*self.p).sum(-1)        
+        ELL = (self.obs_dist.Elog_like(X)*self.p).sum(-1)
+        for i in range(self.event_dim - 1):
+            ELL = ELL.sum(-1)
+        return ELL        
 
     def KLqprior(self):
-        return self.obs_dist.KLqprior().sum(-1) + self.transition.KLqprior() + self.initial.KLqprior()
+        KL = self.obs_dist.KLqprior().sum(-1) + self.transition.KLqprior() + self.initial.KLqprior()
+        for i in range(self.event_dim - 1):
+            KL = KL.sum(-1)
+        return KL
 
     def ELBO(self):
-        return self.sumlogZ - self.KLqprior_last 
+        return self.sumlogZ - self.KLqprior() 
 
     def event_average_f(self,function_string,keepdim=False):
         return self.event_average(eval('self.obs_dist.'+function_string)(),keepdim)
