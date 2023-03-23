@@ -93,4 +93,7 @@ Color gives role and intensity gives assignment pr
 
  
 The test_dmbd.py shows how to get some simple results on a few data sets:  A simple implementation of newtons cradle, the life as we know it simulation from Friston 2012, and an artificial life simultion from particle lenia.  Refs needed.  
+
+
+In the interest of completeness.  It is worth nothing that the principle bottleneck here is the unfortunate number of matrix inversions needed to run the forward backward loop when performing inference for the continuous latents.  So keeping the continuous latent space relatively small greatly speeds up run time.  While this is a drawback, one can get non-linear dynamics out of the model using a large number of roles.  The roles effectively implement a non-linear transformation from the continuous latent space to the observables.  Moreover, the current version of the code actually instantiates a unique ARHMM for each observable, i.  So every microscopic element can have a unique non-linear relationship with the continuous latents.  
  
