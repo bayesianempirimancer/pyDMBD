@@ -48,7 +48,8 @@ To fit the model just use the update method:
       u = (T, batch_shape, control_dim) or None
       r = (T, batch_shape, number_of_microscopic_objects, regression_dim) or None
 
-To run a mini_batch you use latent_iters instead of iters.  The logic here is that you should update latents and assignments as few times before updating any parameters.  I got decent results with latent iters = 4.  This is the moral equivalent of a structured deep network consisting of 4 layers of transformers.  
+To run a mini_batch you use latent_iters instead of iters.  The logic here is that you should update latents and assignments as few times before updating any parameters.  I got decent results with latent iters = 4.  This is the moral equivalent of a structured deep network consisting of 4 layers of transformers and 
+a naieve spatial encoding.  
 
       model.px = None
       model.update(y_mini_batch,u_mini_batch,r_mini_batch,lr=lr,iters=1,latent_iters=4)
@@ -77,7 +78,7 @@ I like to visualize what the different roles are doing (even when they are not d
 
       roles = model.obs_model.obs_dist.mean()[...,:model.hidden_dim]@model.px.mean()
 
-Or make a movie of the observables colored by roles or assignment to s or b or z which you cna do using the included animate_results function.  
+Or make a movie of the observables colored by roles or assignment to s or b or z which you can do using the included animate_results function.  
 Color gives role and intensity gives assignment pr
 
   print('Generating Movie...')
@@ -90,4 +91,6 @@ Color gives role and intensity gives assignment pr
   ar = animate_results('role',f,xlim = (-1.6,1.6), ylim = (-1.2,0.2), fps=10)
   ar.make_movie(v_model, data, 38,41)
 
+ 
+The test_dmbd.py shows how to get some simple results on a few data sets:  A simple implementation of newtons cradle, the life as we know it simulation from Friston 2012, and an artificial life simultion from particle lenia.  Refs needed.  
  
