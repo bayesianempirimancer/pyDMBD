@@ -16,8 +16,10 @@ We model non-linearities in the observation model by expanding the domain of lam
 
 Inference is performed using variational message passing with a posterior that factorizes over latent variables x and role assignments lambda_i.  This is accomplished using the ARHMM class for the lambdas and the Linear Dyanmical system class for the x's.  Priors and posteriors over all mixing matrices are modeled as MatrixNormalWisharts or MatrixNormalDiagonalWisharts:
 
-      [A,B,invSigma_ww] ~ MatrixNormalDiagonalWishart() 
-      [C_k,D_k,invSigma_k_vv] ~ MatrixNormalWishart(), k=1...role_dims.sum()  
+      [{A,B},invSigma_ww] ~ MatrixNormalDiagonalWishart() 
+      [{C_k,D_k},invSigma_k_vv] ~ MatrixNormalWishart(), k=1...role_dims.sum()  
+
+As an aside.  Using the MatrixNormalWishart on the concatenation of A and B might seem like it adds a lot of computational overhead.  But I believe it is warranted in this case as it ensures that, given the latents, a single update to the MNW posterior gets {A,B} exactly right.  Had we modeled A and B as having separate MNW distributions then they would have fought to explain the same thing slowing down convergence.
 
 Using this factorization, posteriors are all conditionally conjugate and inference can be performed using coordinate ascent updates on natural parameters.  A single learning rate with maximum value of 1 can also be used to implement stochastic vb ala Hoffman 2013.  
 
