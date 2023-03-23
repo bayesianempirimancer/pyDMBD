@@ -1,5 +1,6 @@
 # pyDMBD
 # Dynamic Markov Blanket Discovery
+
 Dependencies:  torch, numpy, matplotlib 
 
 Uses Dynamic bayesian attention to assign labels to observables which determine the relationship between the observable and the underlying latent dyanmics.  Judicious use of masks applied to latent transitions as well as the observation model allows for the discovery of one or more markov blankets for each observable.  Two types of masks are currently implemented one identifies a sigle blaneket that segragates the observables into object, environment, and boundary.  The other segragates the observables into multiple objects each with its own blanket, which exist in a common environment.  The former is the default and the latter is activated by setting the number of objects to a value greater than 1.  The remainder of this explainer will focus on the single objectcase.  
