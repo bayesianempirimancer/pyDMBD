@@ -61,8 +61,8 @@ Upon completion:
       model.obs_model.p is (T, batch_shape, number_of_microscopic_objects, role_dims.sum()) and gives the "role" assignment probabilities
       
       model.assignment_pr() is (T, batch_shape, number_of_microscopic_objects, 3) 
-                           and gives the assignment probabilities to envirobment, boundary, and object.
-                           for more than one object this gives environment and just the first object and boundary
+                           and gives the assignment probabilities to environment, boundary, and object.
+                           for more than one object this gives environment and just the first object and boundary (i will fix this at some point)
                             
       model.assignment() is (T, batch_shape, number_of_microscopic_objects) 
                         and gives the map estimate of the assignment to envirobment (0), boundary (1), and object (2)
