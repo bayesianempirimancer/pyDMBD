@@ -2,15 +2,13 @@
 # Dependencies:  torch, numpy, matplotlib 
 Dynamic Markov Blanket Discovery
 
-Uses Dynamic bayesian attention to assign labels to assign labels to observables which determine the relationship between the observable and the underlying latent dyanmics.  Judicious use of masks applied to latent transitions as well as the observation model allows for the discovery of one or more markov blankets for each observable.  Two types of masks are currently implemented one identifies a sigle blaneket that segragates the observables into object, environment, and boundary.  The other segragates the observables into multiple objects each with its own blanket, which exist in a common environment.  The former is the default and the latter is activated by setting the number of objects to a value greater than 1.  The remainder of this explainer will focus on the single objectcase.  
+Uses Dynamic bayesian attention to assign labels to observables which determine the relationship between the observable and the underlying latent dyanmics.  Judicious use of masks applied to latent transitions as well as the observation model allows for the discovery of one or more markov blankets for each observable.  Two types of masks are currently implemented one identifies a sigle blaneket that segragates the observables into object, environment, and boundary.  The other segragates the observables into multiple objects each with its own blanket, which exist in a common environment.  The former is the default and the latter is activated by setting the number of objects to a value greater than 1.  The remainder of this explainer will focus on the single objectcase.  
 
-The algorithm assumes that latent linear dynamics drive a set of observables and evolve according to x[t+1] = A*x[t] + B*u[t] + w[t], where w[t] is a noise term.  By default the noise is independent but can be set to shared using the latent_noise = 'shared'.  This is not recommended as currently there is no option to mask the noise term to force it to only be shared by the environment, boundary, and object latents.  Independent noise is modeled using a diagonal precision matrix, with entries given by independent Gamma distributions.  
+The algorithm assumes that latent linear dynamics drive a set of observables and evolve according to x[t+1] = A*x[t] + B*u[t] + w[t], where w[t] is a noise term.  By default the noise is independent but can be set to shared using the latent_noise = 'shared'.  This is not recommended as currently there is no option to mask the noise term to force it to only be shared by the environment, boundary, and object latents.  Independent noise is modeled using a diagonal precision matrix, with entries given by independent Gamma distributions in the hopes of getting a little automatic relevance determination for free.  
 
-On input, hidden_dims = (s_dim, b_dim, z_dim) controls the number of latent variables assigned to environment (s), boundary (b), and internal states (z) and the matrix A is constrained to have zeros in the upper right and lower left corners preventing object and environment variabels from directly interacting.
+The observation model is given by y_i[t] = C_lambda_i[t] @ x[t] + D_lambda_i[t] @ r[t] + v_lambda_i[t], where v_lambda[t] is the noise term which is assumed to be shared.  Here y_i[t] is a vector of observables associated with measurement i at time t and lambda_i[t] is the assignment of that observable to either object, environment, or boundary.  The logic of this MB discovery algorithm is that i indexes a given particle, or control volume and y_i[t] is a measurement of some set of properties like position and veolcity or the concentration of some chemical species or whatever.  Since the goal is macroscopic object discovery, the function of the latent variable lambda_i[t] is to determine which of the hidden dynamic variables, x = {s,b,z}, drive observable i.  The hidden latents themselves are therefore constrained to evolve accordance with the Markov Blanket assumption.  On input, hidden_dims = (s_dim, b_dim, z_dim) controls the number of latent variables assigned to environment (s), boundary (b), and internal states (z) and the matrix A that controls the dynamics is constrained to have zeros in the upper right and lower left corners preventing object and environment variabels from directly interacting.
 
-The observation model is given by y_i[t] = C_lambda_i[t] @ x[t] + D_lambda_i[t] @ r[t] + v_lambda_i[t], where v_lambda[t] is the noise term which is assumed to be shared.  Here y_i[t] is a vector of observables associated with measurement i at time t and lambda_i[t] is the assignment of that observable to either object, environment, or boundary.  The logic of this MB discovery algorithm is that i indexes a given particle, or control volume and y_i[t] is a measurement of some set of properties like position and veolcity or the concentration of some chemical species or whatever.  Since the goal is macroscopic object discovery, the function of the latent variable lambda_i[t] is to determine which of the hidden dynamic variables, x = {s,b,z}, drive observable i.  
-
-For example if lambda_i[t] = (1,0,0) then the microscopic element i is part of the envirobment and thus C_[1,0,0] is constrained to have zero entries in all the columns associated with hidden dims [b_dim:].  Because we are interested in modeling objects that can exchange matter with their environment, or travel through a fixed meduim (like a traveling wave).  The assignment variables also have dynamics.  Specifically, they evolve according to a discrete HMM with transitions matrix that prevents labels from transitioning directly from object to environment or vice versa.  That is the transition dynamics also have Markov Blanket structure.  
+Associated with each microscopic object, i, the assignment variable functions in the following way.  If lambda_i[t] = (1,0,0) then the microscopic element i is part of the envirobment and thus C_[1,0,0] is constrained to have zero entries in all the columns associated with hidden dims [b_dim:].  Because we are interested in modeling objects that can exchange matter with their environment, or travel through a fixed meduim (like a traveling wave).  The assignment variables also have dynamics.  Specifically, they evolve according to a discrete HMM with transition matrix that prevents labels from transitioning directly from object to environment or vice versa.  That is the transition dynamics also have Markov Blanket structure.  
 
 We model non-linearities in the observation model by expanding the domain of lambda_i[t] to include 'roles' associated with different emmissions matrices C_lambda but with the same MB induced masking structure.  The number of roles is controlled by role_dims = (s_roles, b_roles, z_roles), which is specified on input.  Thus the transition matrix for the lambda_i's is role_dims.sum() x role_dims.sum() constrained to have zeros in the upper right and lower left corners.  
 
@@ -20,6 +18,8 @@ Inference is performed using variational message passing with a posterior that f
       [{C_k,D_k},invSigma_k_vv] ~ MatrixNormalWishart(), k=1...role_dims.sum()  
 
 As an aside.  Using the MatrixNormalWishart on the concatenation of A and B might seem like it adds a lot of computational overhead.  But I believe it is warranted in this case as it ensures that, given the latents, a single update to the MNW posterior gets {A,B} exactly right.  Had we modeled A and B as having separate MNW distributions then they would have fought to explain the same thing slowing down convergence.
+
+We also assume that the posterior distribution over the assignment variables factorizes across the different observables, i.e. q(lambda) = \prod_i q(lambda_i).  In the usual way, the posterior distributions over the initial and transition distributions q(T_i) are Dirichlet.  To make the code simpler I used the ARHMM module which designed to implement an autoregressive hidden markov model, but works for our purposes here.  
 
 Using this factorization, posteriors are all conditionally conjugate and inference can be performed using coordinate ascent updates on natural parameters.  A single learning rate with maximum value of 1 can also be used to implement stochastic vb ala Hoffman 2013.  
 
@@ -31,12 +31,10 @@ The logic of the code is to initialize the model
       obs_shape = (number_of_microscopic_objects, dimension_of_the_observable)
       role_dims = (number_of_s_roles, number_of_b_roles, number_of_z_roles)
       hidden_dims = (number_of_environment_latents, number_of_boundary_latents, number_of_internal_latents)
-      control_dim = 0 if no control signal is used, otherwise the dimension of the control signal
+      control_dim = 0 if no control signal is used, otherwise it is the terminal dimension of the control matrix
       regression_dim = 0 if no regression signal is used, otherwise the dimension of the regression signal
 
-Note that control_dim and regression_dim can also be set to -1.  The causes the model to remove any baseline effects for the observation model
-or the latent dynamics.  I usually only remove the redundant baseline for the latent linear dynamics, i.e. control_dim = -1.  But for reasons
-leaving it in seems to lead to faster convergence.  Not sure why.  
+Note that control_dim and regression_dim can also be set to -1.  The causes the model to remove any baseline effects for the observation model or the latent dynamics.  I usually only remove the redundant baseline for the latent linear dynamics, i.e. control_dim = -1.  But for reasons leaving it in seems to lead to faster convergence.  Not sure why.  Also note that if you use regressors then the regression matrix must have a shape that is compatible with the observables.  See below
 
 batch_shape = () by default, but if you want to fit a bunch of DMBD's in parallel and pick the one with the best ELBO then set 
            batch_shape = (number_of_parallel_models,).  
@@ -50,7 +48,7 @@ To fit the model just use the update method:
       u = (T, batch_shape, control_dim) or None
       r = (T, batch_shape, number_of_microscopic_objects, regression_dim) or None
 
-To run a mini_batch you use latent_iters instead of iters.  The logic here is that you should update latents and assignments as few times before updating any parameters.  I got decent results with latent iters = 4.  This is the moral equivalent of a structured deep network consisting of 4 layers of identicle transformers and a naieve spatial encoding.  
+Here T is the number of time points.  To run a mini_batch you use latent_iters instead of iters.  The logic here is that you should update latents and assignments as few times before updating any parameters.  I got decent results with latent iters = 4.  
 
       model.update(y_mini_batch,u_mini_batch,r_mini_batch,lr=lr,latent_iters=4)
 
@@ -71,7 +69,7 @@ Upon completion:
       model.obs_model.obs_dist.mean() is (role_dims.sum(), obs_dim, hidden_dims.sum() + regression_dim + 1, dimension_of_the_observable)
                         and gives the emissions matrix for each role with the regressions coefficients on the back end.  The terminal dimension is the bias term
 
-      model.A.mean().squeeze() is (hidden_dims.sum(), hidden_dims.sum() + regression_dim + 1, dimension_of_the_observable)
+      model.A.mean().squeeze() is (hidden_dims.sum(), hidden_dims.sum() + control_dim + 1, dimension_of_the_observable)
                         and gives the emissions matrix for each role.  
                          
       moel.obs_model.obs_dist.mean() is (role_dims.sum(), obs_dim, hidden_dims.sum() + 1)  
@@ -95,8 +93,11 @@ Color gives role and intensity gives assignment pr
   ar.make_movie(v_model, data, 38,41)
 
  
-The test_dmbd.py shows how to get some simple results on a few data sets:  A simple implementation of newtons cradle, the life as we know it simulation from Friston 2012, and an artificial life simultion from particle lenia.  Refs needed.  
+The test_dmbd.py shows how to get some simple results on a few data sets:  
+      A simple implementation of newtons cradle
+      The life as we know it simulation from Friston 2012
+      An artificial life simultion from particle lenia.  Refs needed.  
 
 
-In the interest of completeness.  It is worth nothing that the principle bottleneck here is the unfortunate number of matrix inversions needed to run the forward backward loop when performing inference for the continuous latents.  So keeping the continuous latent space relatively small greatly speeds up run time.  While this is a drawback, one can get non-linear dynamics out of the model using a large number of roles.  The roles effectively implement a non-linear transformation from the continuous latent space to the observables.  Moreover, the current version of the code actually instantiates a unique ARHMM for each observable, i.  So every microscopic element can have a unique non-linear relationship with the continuous latents.  
+In the interest of completeness.  It is worth nothing that the principle bottleneck here is the unfortunate number of matrix inversions needed to run the forward backward loop when performing inference for the continuous latents.  So keeping the continuous latent space relatively small greatly speeds up run time.  The second principle limitation of this approach is the assumption of linear dynamics for the continuous latents.  However, since the roles effectively implement a non-linear transformation from the continuous latent space to the observables we can rationalize that this approach is still quite general since there is always some non-linear transform in observables that results in linear dynamics.  Anyway, since the computational cost of adding roles is quite modest, the current version of the code instantiates a unique ARHMM for each observable, i.  So every microscopic element can have a unique non-linear relationship with the continuous latents.  This can be turned off by setting unique_obs = False
  
