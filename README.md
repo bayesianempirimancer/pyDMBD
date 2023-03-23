@@ -19,7 +19,7 @@ Inference is performed using variational message passing with a posterior that f
       [A,B,invSigma_ww] ~ MatrixNormalDiagonalWishart() 
       [C_k,D_k,invSigma_k_vv] ~ MatrixNormalWishart(), k=1...role_dims.sum()  
 
-Using this factorization, posteriors are all conditionally conjugate and inference can be perfored using coordinate ascent updates on natural parameters.  A single learning rate with maximum value of 1 can also be used to implement stochastic vb ala Hoffman 2013.  
+Using this factorization, posteriors are all conditionally conjugate and inference can be performed using coordinate ascent updates on natural parameters.  A single learning rate with maximum value of 1 can also be used to implement stochastic vb ala Hoffman 2013.  
 
 I recommend using lr = 0.5 in general or lr = mini_batch_size/total_number_of_minibatches.  
 
@@ -48,31 +48,32 @@ To fit the model just use the update method:
       u = (T, batch_shape, control_dim) or None
       r = (T, batch_shape, number_of_microscopic_objects, regression_dim) or None
 
-To run a mini_batch you use latent_iters instead of iters.  The logic here is that you should update latents and assignments as few times before updating any parameters.  I got decent results with latent iters = 4.  This is the moral equivalent of a structured deep network consisting of 4 layers of transformers and 
-a naieve spatial encoding.  
+To run a mini_batch you use latent_iters instead of iters.  The logic here is that you should update latents and assignments as few times before updating any parameters.  I got decent results with latent iters = 4.  This is the moral equivalent of a structured deep network consisting of 4 layers of identicle transformers and a naieve spatial encoding.  
 
-      model.px = None
-      model.update(y_mini_batch,u_mini_batch,r_mini_batch,lr=lr,iters=1,latent_iters=4)
+      model.update(y_mini_batch,u_mini_batch,r_mini_batch,lr=lr,latent_iters=4)
 
 Upon completion:
       model.px = MultivariatNormal_vector_format which stores the posterior over the latents from the linear dynamics
-      model.px.mean() = (T, batch_shape, hidden_dims.sum())
+      model.px.mean() = (T, batch_shape, hidden_dims.sum(),1)  
       model.px.ESigma() = (T, batch_shape, hidden_dims.sum(),hidden_dims.sum()) is the covariance matrix
 
       model.obs_model.p is (T, batch_shape, number_of_microscopic_objects, role_dims.sum()) and gives the "role" assignment probabilities
       
       model.assignment_pr() is (T, batch_shape, number_of_microscopic_objects, 3) 
-                            and gives the assignment probabilities to envirobment, boundary, and object.
-                            for more than one object this gives environment and just the first object and boundary
+                           and gives the assignment probabilities to envirobment, boundary, and object.
+                           for more than one object this gives environment and just the first object and boundary
                             
       model.assignment() is (T, batch_shape, number_of_microscopic_objects) 
-                         and gives the map estimate of the assignment to envirobment (0), boundary (1), and object (2)
+                        and gives the map estimate of the assignment to envirobment (0), boundary (1), and object (2)
 
       model.obs_model.obs_dist.mean() is (role_dims.sum(), obs_dim, hidden_dims.sum() + regression_dim + 1, dimension_of_the_observable)
-                         and gives the emissions matrix for each role with the regressions coefficients on the back end.  The terminal dimension is the bias term
+                        and gives the emissions matrix for each role with the regressions coefficients on the back end.  The terminal dimension is the bias term
 
       model.A.mean().squeeze() is (hidden_dims.sum(), hidden_dims.sum() + regression_dim + 1, dimension_of_the_observable)
-                         and gives the emissions matrix for each role.  
+                        and gives the emissions matrix for each role.  
+                         
+      moel.obs_model.obs_dist.mean() is (role_dims.sum(), obs_dim, hidden_dims.sum() + 1)  
+                        and gives the linear transform from latents to observations associated with each role.  The terminal element is the bias term
   
 I like to visualize what the different roles are doing (even when they are not driving any observations)
 
