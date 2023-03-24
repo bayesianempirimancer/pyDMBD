@@ -12,7 +12,7 @@ from dists.utils import matrix_utils
 import time
 
 class DMBD(LinearDynamicalSystems):
-    def __init__(self, obs_shape, role_dims, hidden_dims, control_dim = 0, regression_dim = 0, latent_noise = 'independent', batch_shape=(),number_of_objects=1, static = False):
+    def __init__(self, obs_shape, role_dims, hidden_dims, control_dim = 0, regression_dim = 0, latent_noise = 'independent', batch_shape=(),number_of_objects=1, unique_obs = False):
 
         # obs_shape = (n_obs,obs_dim)
         #       n_obs is the number of observables
@@ -37,7 +37,8 @@ class DMBD(LinearDynamicalSystems):
             role_dim = np.sum(role_dims)
             A_mask, B_mask, role_mask = self.one_object_mask(hidden_dims, role_dims, control_dim, obs_dim, regression_dim)
 
-        self.static = static
+        self.number_of_objects = number_of_objects
+        self.unique_obs = unique_obs
         self.latent_noise = latent_noise
         self.obs_shape = obs_shape
         self.obs_dim = obs_dim
@@ -52,9 +53,11 @@ class DMBD(LinearDynamicalSystems):
         self.batch_shape = batch_shape
         self.batch_dim = len(batch_shape)
         self.expand_to_batch = True
-        offset = (1,)*(len(obs_shape)-1)
+        offset = (1,)*(len(obs_shape)-1)   # This is an unnecessary hack to make the code work with the old version of the ARHMM module
+                                           # It can be removed now that the ARHMM module has been updated
         self.offset = offset
         self.logZ = -torch.tensor(torch.inf,requires_grad=False)
+        self.ELBO_save = -torch.inf*torch.ones(1)
         self.iters = 0
         self.px = None
 
@@ -73,10 +76,12 @@ class DMBD(LinearDynamicalSystems):
 #       The first line implements the observation model so that each observation has a unique set of roles while the second 
 #       line forces the role model to be shared by all observation.  There is no difference ie computation time associaated with this choice
 #       only the memory requirements.  
-#        self.obs_model = ARHMM_prXRY(role_dim, obs_dim, hidden_dim, regression_dim, batch_shape = (n_obs,), mask = B_mask,pad_X=False).to_event(1)
-        self.obs_model = ARHMM_prXRY(role_dim, obs_dim, hidden_dim, regression_dim, batch_shape = (), mask = B_mask,pad_X=False)
-        self.obs_model.transition.alpha_0 = self.obs_model.transition.alpha_0*role_mask + 1.5*torch.eye(role_dim,requires_grad=False)
-        self.obs_model.transition.alpha = self.obs_model.transition.alpha*role_mask + 1.5*torch.eye(role_dim,requires_grad=False)
+        if self.unique_obs is True:
+            self.obs_model = ARHMM_prXRY(role_dim, obs_dim, hidden_dim, regression_dim, batch_shape = (n_obs,), mask = B_mask,pad_X=False).to_event(1)
+        else:   
+            self.obs_model = ARHMM_prXRY(role_dim, obs_dim, hidden_dim, regression_dim, batch_shape = (), mask = B_mask,pad_X=False)
+        self.obs_model.transition.alpha_0 = self.obs_model.transition.alpha_0*role_mask
+        self.obs_model.transition.alpha = self.obs_model.transition.alpha*role_mask
         self.set_latent_parms()
         self.log_like = -torch.tensor(torch.inf,requires_grad=False)
 
@@ -86,6 +91,13 @@ class DMBD(LinearDynamicalSystems):
         # Elog_like_X_given_pY returns invSigma, invSigmamu, Residual averaged over role assignments, but not over observations
         invSigma, invSigmamu, Residual = self.obs_model.Elog_like_X_given_pY((Delta(y.unsqueeze(-3)),r.unsqueeze(-3))) 
         return  invSigma.sum(-3,True), invSigmamu.sum(-3,True), Residual.sum(-1,True)
+
+
+    def KLqprior(self):
+        KL = self.x0.KLqprior() + self.A.KLqprior()
+        for i in range(len(self.offset)):
+            KL = KL.squeeze(-1)
+        return KL + self.obs_model.KLqprior()
 
 
     def update_assignments(self,y,r):
@@ -118,10 +130,23 @@ class DMBD(LinearDynamicalSystems):
 
     def assignment_pr(self):
         p_role = self.obs_model.assignment_pr()
-        ps = p_role[...,:self.role_dims[0]].sum(-1,True)
-        pb = p_role[...,self.role_dims[0]:self.role_dims[0]+self.role_dims[1]].sum(-1,True)
-        pz = p_role[...,self.role_dims[0]+self.role_dims[1]:].sum(-1,True)
-        return torch.cat((ps,pb,pz),dim=-1)
+        p = p_role[...,:self.role_dims[0]].sum(-1,True)
+        for n in range(self.number_of_objects):
+            brdstart = self.role_dims[0] + n*(self.role_dims[1]+self.role_dims[2])
+            pb = p_role[...,brdstart:brdstart+self.role_dims[1]].sum(-1,True)
+            pz = p_role[...,brdstart+self.role_dims[1]:brdstart+self.role_dims[1]+self.role_dims[2]].sum(-1,True)
+            p = torch.cat((p,pb,pz),dim=-1)
+        return p
+
+    def particular_assignment_pr(self):
+        p_sbz = self.assignment_pr()
+        p = p_sbz[...,:1]
+        for n in range(self.number_of_objects):
+            p=torch.cat((p,p_sbz[...,n+1:n+3].sum(-1,True)),dim=-1)
+        return p
+
+    def particular_assignment(self):
+        return self.particular_assignment_pr().argmax(-1)
 
     def assignment(self):
         return self.assignment_pr().argmax(-1)
@@ -152,13 +177,14 @@ class DMBD(LinearDynamicalSystems):
             self.update_latents(y,u,r)  
             idx = self.obs_model.p>0
             mask_temp = self.obs_model.transition.loggeomean()>-torch.inf
-            ELBO_contrib_obs = (self.obs_model.transition.loggeomean()[mask_temp]*self.obs_model.SEzz[mask_temp]).sum(-1).sum(-1) 
-            ELBO_contrib_obs = ELBO_contrib_obs + (self.obs_model.initial.loggeomean()*self.obs_model.SEz0).sum(-1)
+            ELBO_contrib_obs = (self.obs_model.transition.loggeomean()[mask_temp]*self.obs_model.SEzz[mask_temp]).sum()
+            ELBO_contrib_obs = ELBO_contrib_obs + (self.obs_model.initial.loggeomean()*self.obs_model.SEz0).sum()
             ELBO_contrib_obs = ELBO_contrib_obs - (self.obs_model.p[idx].log()*self.obs_model.p[idx]).sum()
             ELBO = self.ELBO() + ELBO_contrib_obs
             self.update_obs_parms(y, r, lr=lr)
             self.update_latent_parms(p=None,lr = lr)  # updates parameters of latent dynamics
             print('Percent Change in ELBO = ',((ELBO-ELBO_last)/ELBO_last.abs()).numpy()*100,  '  Iteration Time = ',time.time()-t)
+            self.ELBO_save = torch.cat((self.ELBO_save,ELBO*torch.ones(1)),dim=-1)
 
 #### DMBD MASKS
 
@@ -295,10 +321,14 @@ class animate_results():
 
 
         if(self.assignment_type == 'role'):
-            assignments = model.obs_model.assignment()/(model.role_dim-1)
+            rn = model.role_dim[0] + model.number_of_objects*(model.role_dim[1]+model.role_dim[2])
+            assignments = model.obs_model.assignment()/(rn-1)
             confidence = model.obs_model.assignment_pr().max(-1)[0]
-        else:
-            assignments = model.assignment()/2.0
+        elif(self.assignment_type == 'sbz'):
+            assignments = model.assignment()/2.0/model.number_of_objects
+            confidence = model.assignment_pr().max(-1)[0]
+        elif(self.assignment_type == 'particular'):
+            assignments = model.particular_assignment()/model.number_of_objects
             confidence = model.assignment_pr().max(-1)[0]
 
         fig_data = data[:,batch_numbers,:,0:2]

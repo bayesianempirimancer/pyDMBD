@@ -237,7 +237,7 @@ class LinearDynamicalSystems():
 
         for i in range(len(self.offset)):
             logZ = logZ.squeeze(-1)
-        self.logZ = logZ.sum(0)
+        self.logZ = logZ.sum(0)  # only has time integrated out.
 
     def KLqprior(self):  # returns batch_size
         KL = self.x0.KLqprior() + self.A.KLqprior()
@@ -309,7 +309,7 @@ class LinearDynamicalSystems():
         post_Residual = -0.5*(mu*invSigmamu).squeeze(-1).sum(-1) + 0.5*invSigma.logdet() - 0.5*self.hidden_dim*np.log(2*np.pi)
         Residual = Residual - post_Residual # so that Residual is log p(y_t|y_{t-1},y_{t-2},...,y_0)
 
-        return 0.5*(invSigma+invSigma.transpose(-2,-1)), invSigmamu, post_Residual, Residual, Sigma_tm1_tm1
+        return invSigma, invSigmamu, post_Residual, Residual, Sigma_tm1_tm1
 
     # def backward_recursion(self, invGamma, invGammamu, invSigma, invSigmamu, u):
     #     # here invSigma and invSigmamu summarize p(x_t| y_0:t) and are from the forward loop
