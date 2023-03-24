@@ -8,7 +8,7 @@ class Dirichlet():
         self.event_shape = alpha_0.shape[-1:]
         self.batch_shape = alpha_0.shape[:-1]
         self.alpha_0 = alpha_0
-        self.alpha = self.alpha_0 + torch.rand(self.alpha_0.shape,requires_grad=False)
+        self.alpha = self.alpha_0 + 2.0*torch.rand(self.alpha_0.shape,requires_grad=False)*self.alpha_0
 
     def to_event(self,n):
         if n == 0:
