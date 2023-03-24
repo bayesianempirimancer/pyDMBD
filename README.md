@@ -73,6 +73,12 @@ Upon completion:
                         
       model.assignment() is (T, batch_shape, number_of_microscopic_objects) 
                     and gives the map estimate of the assignment to envirobment (0), boundary (1), and object (2)
+                    for number_of_objects > 1 the boundary and internal nodes of the n-th object have a value of 2*(n-1)+1 2*n respetively
+                    
+      model.particular_assignment() is (T,batch_shape, number_of_microscopic_objects)
+                    and give the map estimate of the assignment to envirobment (0), and (boundary + object) (1)
+                    This is 'particularly' useful when there are many macroscopic objects as a value of n corresponds to an assignment
+                    of the observation to either the boundary or internal state of object n.  
 
       model.obs_model.obs_dist.mean() is (role_dims.sum(), obs_dim, hidden_dims.sum() + regression_dim + 1, dimension_of_the_observable)
                     and gives the emissions matrix for each role with the regressions coefficients on the back end.  The terminal dimension is the bias term
