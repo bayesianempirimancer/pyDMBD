@@ -130,6 +130,34 @@ plt.show()
 print('GMM TEST COMPLETE')
 
 
+
+print('TEST Isotropic Gaussian Mixture Model')
+from IsotropicGaussianMixtureModel import IsotropicGaussianMixtureModel as GMM
+dim = 2
+nc = 4
+nb = 10
+mu = torch.randn(4,2)*4  
+A = torch.randn(4,2,2)/np.sqrt(2)
+
+num_samples = 200
+data = torch.zeros(num_samples,2)
+
+for i in range(num_samples):
+    data[i,:] = mu[i%4,:] + A[i%4,:,:]@torch.randn(2) + torch.randn(2)/8.0
+
+
+#data = data-data.mean(0,True)
+#data = data/data.std(0,True)
+nc = 6
+
+gmm = GMM(nc,dim)
+gmm.update(data.unsqueeze(-2),20,1,verbose=True)
+plt.scatter(data[:,0],data[:,1],c=gmm.assignment())
+plt.show()
+
+print('Isotropic GMM TEST COMPLETE')
+
+
 print('TEST HMM')
 from HMM import HMM
 print("TEST VANILLA HMM")
@@ -481,16 +509,16 @@ xidx = (w_true[0,0,:]**2).argmax()
 plt.scatter(X[:,xidx].data,Y[:,0].data,c=model.assignment())
 plt.show()
 
-
-
-
-
-print('Test Multinomial Logistic Regression')
+print('Test Multinomial Logistic Regression with ARD')
+import torch
+import numpy as np
+from  matplotlib import pyplot as plt
+from dists import Delta
 from MultiNomialLogisticRegression import *
 n=4
 p=10
-num_samples = 200
-W = torch.randn(n,p)/np.sqrt(p)
+num_samples = 2000
+W = 2.0*torch.randn(n,p)/np.sqrt(p)
 X = torch.randn(num_samples,p)
 
 logpY = X@W.transpose(-2,-1)
@@ -500,48 +528,62 @@ Y = torch.distributions.OneHotCategorical(logits = logpY).sample()
 
 model = MultiNomialLogisticRegression(n,p,pad_X=True)
 
-model.raw_update(X,Y,iters =4)
+model.raw_update(X,Y,iters = 10)
+#model.update(Delta(X.unsqueeze(-1)),Y,iters =4)
 What = model.beta.mean().squeeze()
 
 print('Simple Predictions, i.e. map estimate of weights')
 psb = model.predict_simple(X)
 for i in range(n):
-    plt.scatter(pY.log()[:,i],psb.log()[:,i])    
+    plt.scatter(pY.log()[:,i],psb.log()[:,i],alpha=0.5)    
 plt.plot([pY.log().min(),0],[pY.log().min(),0])
 plt.show()
 
 print('VB Predictions, i.e. use mean of polyagamma distribution')
 psb2 = model.predict(X)
 for i in range(n):
-    plt.scatter(pY.log()[:,i],psb2.log()[:,i])    
+    plt.scatter(pY.log()[:,i],psb2.log()[:,i],alpha=0.5)    
 plt.plot([pY.log().min(),0],[pY.log().min(),0])
 plt.show()
 
-print('Gibbs prediction, i.e. sample from polyagamma part of the posterior distribution (20 samples)')
-psb2 = model.psb_given_w(X)
-for i in range(n):
-    plt.scatter(pY.log()[:,i],psb2.log()[:,i])    
-plt.plot([pY.log().min(),0],[pY.log().min(),0])
-plt.show()
+# print('Gibbs prediction, i.e. sample from polyagamma part of the posterior distribution (20 samples)')
+# psb2 = model.psb_given_w(X)
+# for i in range(n):
+#     plt.scatter(pY.log()[:,i],psb2.log()[:,i])    
+# plt.plot([pY.log().min(),0],[pY.log().min(),0])
+# plt.show()
 
 
 print('TEST NL REGRESSION Batched')
-from NLRegression import *
 
-model = NLRegression(1,4,1,10,batch_shape=(6,))
-X = torch.rand(400,4)*6-3
-Y = torch.randn(400,1)
-W_true = torch.randn(4,1)
+import time
+import torch
+import numpy as np
+from matplotlib import pyplot as plt
+from NLRegression import NLRegression
 
-Y = (X@W_true)**2 + torch.randn(400,1)/4.0
+n=1
+p=10
+hidden_dim = 1
+nc =  10
+num_samps=400
 t=time.time()
-t=time.time()
-model.raw_update(X,Y,20,1)
+model = NLRegression(n,p,hidden_dim,nc,batch_shape=(10,))
+X = 4*torch.rand(num_samps,p)-2
+Y = torch.randn(num_samps,n)
+W_true = 3.0*torch.randn(p,n)/np.sqrt(p)
+
+Y = (X@W_true/2).sin() + torch.randn(num_samps,1)/10.0*0
+
+X=X/X.std()
+Y=Y/Y.std()
+Y=Y-Y.mean()
+
+model.raw_update(X,Y,40,1)
 print(time.time()-t)
 
 loc = model.ELBO().argmax(0)
 
-U = model.ubar.squeeze(-1)[loc]
 
 U_true = X@W_true
 U_true = U_true/U_true.std(0,True)
@@ -550,21 +592,19 @@ U = (model.W.EXTinvU()[loc]@X.unsqueeze(-1)).squeeze(-1)
 Ubar = model.U.mean()[loc].squeeze(-1)/U.std(0,True)
 U = U/U.std(0,True)
 
-plt.scatter(U_true[:,0],Y[:,0],c='black',alpha=0.1)
-plt.scatter(U[:,0],Y[:,0],c=model.p[:,loc,:].argmax(-1).data)
-plt.show()
-
-Yhat, Yerr, p = model.predict(X)
+Yhat, Yerr, pr, u_hat = model.predict(X)
 Yerr = 2*Yerr.diagonal(dim1=-2,dim2=-1).sqrt()
-Yhat = Yhat.squeeze(-1)
+u_hat = u_hat[:,loc,:]
+u_hat = u_hat/u_hat.std(0,True)
 
 plt.scatter(U_true[:,0],Y[:,0],c='black')
-#plt.scatter(U_true[:,0],Yhat[:,0])
-plt.scatter(U_true[:,0],Yhat[:,loc,0],c=p[:,loc,:].argmax(-1).data)
-plt.errorbar(U_true[:,0],Yhat[:,loc,0],yerr = Yerr[:,loc,0], fmt='.')
+plt.scatter(U_true[:,0],Yhat[:,loc,0],c=pr[:,loc,:].argmax(-1).data)
 plt.show()
 
-
+plt.scatter(U_true[:,0],Y[:,0],c='black')
+plt.scatter(U[:,0],Yhat[:,loc,0],c=pr[:,loc,:].argmax(-1).data)
+#plt.errorbar(U_true[:,0],Yhat[:,loc,0],yerr = Yerr[:,loc,0], fmt='.')
+plt.show()
 
 print('Test Poisson Mixture Model')
 from PoissonMixtureModel import *
