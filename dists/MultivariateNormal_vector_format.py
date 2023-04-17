@@ -2,12 +2,13 @@ import torch
 import numpy as np
 
 class MultivariateNormal_vector_format():
-    def __init__(self,mu=None,Sigma=None,invSigmamu=None,invSigma=None):
+    def __init__(self,mu=None,Sigma=None,invSigmamu=None,invSigma=None,Residual=None):
 
         self.mu = mu
         self.Sigma = Sigma
         self.invSigmamu = invSigmamu
         self.invSigma = invSigma
+        self.Residual = Residual
 
         self.event_dim = 2  # This is because we assue that this is a distribution over vectors that are dim x 1 matrices
         if self.mu is not None:
@@ -74,6 +75,11 @@ class MultivariateNormal_vector_format():
         if self.invSigmamu is None:
             self.invSigmamu = self.EinvSigma()@self.mean()
         return self.invSigmamu
+
+    def EResidual(self):
+        if self.Residual is None:
+            self.Residual = - 0.5*(self.mean()*self.EinvSigmamu()).sum(-1).sum(-1) + 0.5*self.ElogdetinvSigma() - 0.5*self.dim*np.log(2*np.pi)
+        return self.Residual
 
     def ElogdetinvSigma(self):
         if self.Sigma is None:

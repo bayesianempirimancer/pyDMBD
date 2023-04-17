@@ -268,21 +268,21 @@ class MatrixNormalGamma():
 
         return mu_y, Sigma_y_y, invSigma_y_y, invSigmamu_y
 
-    def predict_given_pX(self,pX,reparam=False):
+    def predict_given_pX(self,pX):
         if self.pad_X:
             invSigma_y_y = self.EinvSigma()
-            invSigma_y_x = self.EinvUX()[...,:-1,:]
-            invSigma_x_x = self.EXTinvUX()[...,:-1,:-1] + pX.invSigma
-            Sigma_y_y, Sigma_y_x = matrix_utils.block_matrix_inverse(invSigma_y_y, invSigma_y_x, invSigma_y_x.transpose(-2,-1), invSigma_x_x, block_form = 'True')[0:2]
-            invSigmamu_y = Sigma_y_x@pX.invSigmamu - self.EXTinvUX()[...,:-1,-1:]
-            mu_y = Sigma_y_y@invSigmamu_y
+            invSigma_y_x = -self.EinvUX()[...,:-1,:]
+            invSigma_x_x = self.EXTinvUX()[...,:-1,:-1] + pX.EinvSigma()
+            Sigma_y_y, invSigma_y_ySigma_y_x = matrix_utils.block_matrix_inverse(invSigma_y_y, invSigma_y_x, invSigma_y_x.transpose(-2,-1), invSigma_x_x, block_form = 'left')[0:2]
+            invSigmamu_y = -self.EXTinvUX()[...,:-1,-1:] + invSigma_y_ySigma_y_x@pX.EinvSigmamu()
+            mu_y = Sigma_y_y@invSigmamu_y 
         else:    
             invSigma_y_y = self.EinvSigma()
-            invSigma_y_x = self.EinvUX()
-            invSigma_x_x = self.EXTinvUX + pX.invSigma
-            Sigma_y_y, Sigma_y_x = matrix_utils.block_matrix_inverse(invSigma_y_y, invSigma_y_x, invSigma_y_x.transpose(-2,-1), invSigma_x_x, block_form = 'True')[0:2]
-            invSigmamu_y = Sigma_y_x@pX.invSigmamu
-            mu_y = Sigma_y_y@invSigmamu_y
+            invSigma_y_x = -self.EinvUX()
+            invSigma_x_x = self.EXTinvUX() + pX.EinvSigma()
+            Sigma_y_y, invSigma_y_ySigma_y_x = matrix_utils.block_matrix_inverse(invSigma_y_y, invSigma_y_x, invSigma_y_x.transpose(-2,-1), invSigma_x_x, block_form = 'left')[0:2]
+            invSigmamu_y = invSigma_y_ySigma_y_x@pX.EinvSigmamu()
+            mu_y = Sigma_y_y@invSigmamu_y 
 
         pY = MultivariateNormal_vector_format(Sigma = Sigma_y_y, mu = mu_y, invSigma = invSigma_y_y, invSigmamu = invSigmamu_y)
         return pY

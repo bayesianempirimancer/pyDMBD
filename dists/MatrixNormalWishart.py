@@ -113,10 +113,11 @@ class MatrixNormalWishart():
                     SEx = SEx.sum(0)
                     SEy = SEy.sum(0)
                     
+
                 SExx = torch.cat((SExx,SEx),dim=-1)
                 SEx = torch.cat((SEx,n.expand(SEx.shape[:-2]+(1,1))),dim=-2)
                 SExx = torch.cat((SExx,SEx.transpose(-2,-1)),dim=-2)
-                SEyx = torch.cat((SEyx,SEy),dim=-1)
+                SEyx = torch.cat((SEyx,SEy.expand(SEyx.shape[:-1]+(1,))),dim=-1)
 
             n = n.expand(self.batch_shape + self.event_shape[:-2])
             self.ss_update(SExx,SEyx,SEyy,n,lr)
@@ -231,7 +232,7 @@ class MatrixNormalWishart():
     def Elog_like_X(self,Y):
         if self.pad_X:
             invSigma_x_x = self.EXTinvUX()[...,:-1,:-1]
-            invSigmamu_x = self.EXTinvU()[...,:-1,:]@Y - self.EXTinvUX()[...,:-1,-1:]
+            invSigmamu_x = self.EXTinvU()[...,:-1,:]@Y + self.EXTinvUX()[...,:-1,-1:]
             Residual = -0.5*(Y.transpose(-2,-1)@self.EinvSigma()@Y).squeeze(-1).squeeze(-1) - 0.5*self.n*np.log(2.0*np.pi) + 0.5*self.ElogdetinvSigma()
             Residual = Residual - 0.5*self.EXTinvUX()[...,-1,-1]
         else:
@@ -253,6 +254,7 @@ class MatrixNormalWishart():
             return invSigma_x_x, invSigmamu_x, Residual
 
 
+
     def predict(self,X):
 
         if self.pad_X:
@@ -260,28 +262,27 @@ class MatrixNormalWishart():
         invSigma_y_y = self.EinvSigma()
         Sigma_y_y = invSigma_y_y.inverse()
         invSigmamu_y = (self.EinvUX()@X)
-        mu_y = (Sigma_y_y@invSigmamu_y).squeeze(-1)
+        mu_y = (Sigma_y_y@invSigmamu_y)
 
         return mu_y, Sigma_y_y, invSigma_y_y, invSigmamu_y
 
-    def predict_given_pX(self,pX,reparam=False):
+    def predict_given_pX(self,pX):
         if self.pad_X:
             invSigma_y_y = self.EinvSigma()
-            invSigma_y_x = self.EinvUX()[...,:-1,:]
-            invSigma_x_x = self.EXTinvUX()[...,:-1,:-1] + pX.invSigma
-            Sigma_y_y, Sigma_y_x = matrix_utils.block_matrix_inverse(invSigma_y_y, invSigma_y_x, invSigma_y_x.transpose(-2,-1), invSigma_x_x, block_form = 'True')[0:2]
-            invSigmamu_y = Sigma_y_x@pX.invSigmamu - self.EXTinvUX()[...,:-1,-1:]
-            mu_y = Sigma_y_y@invSigmamu_y
+            invSigma_y_x = -self.EinvUX()[...,:,:-1]
+            invSigma_x_x = self.EXTinvUX()[...,:-1,:-1] + pX.EinvSigma()
+            Sigma_y_y, invSigma_y_ySigma_y_x = matrix_utils.block_matrix_inverse(invSigma_y_y, invSigma_y_x, invSigma_y_x.transpose(-2,-1), invSigma_x_x, block_form = 'left')[0:2]
+            invSigmamu_y = self.EinvUX()[...,:,-1:] + invSigma_y_ySigma_y_x@pX.EinvSigmamu()
+            mu_y = Sigma_y_y@invSigmamu_y 
         else:    
             invSigma_y_y = self.EinvSigma()
-            invSigma_y_x = self.EinvUX()
-            invSigma_x_x = self.EXTinvUX + pX.invSigma
-            Sigma_y_y, Sigma_y_x = matrix_utils.block_matrix_inverse(invSigma_y_y, invSigma_y_x, invSigma_y_x.transpose(-2,-1), invSigma_x_x, block_form = 'True')[0:2]
-            invSigmamu_y = Sigma_y_x@pX.invSigmamu
-            mu_y = Sigma_y_y@invSigmamu_y
+            invSigma_y_x = -self.EinvUX()
+            invSigma_x_x = self.EXTinvUX() + pX.EinvSigma()
+            Sigma_y_y, invSigma_y_ySigma_y_x = matrix_utils.block_matrix_inverse(invSigma_y_y, invSigma_y_x, invSigma_y_x.transpose(-2,-1), invSigma_x_x, block_form = 'left')[0:2]
+            invSigmamu_y = invSigma_y_ySigma_y_x@pX.EinvSigmamu()
+            mu_y = Sigma_y_y@invSigmamu_y 
 
-        pY = MultivariateNormal_vector_format(Sigma = Sigma_y_y, mu = mu_y, invSigma = invSigma_y_y, invSigmamu = invSigmamu_y)
-
+        pY = MultivariateNormal_vector_format(Sigma = Sigma_y_y, mu = mu_y, invSigmamu = invSigmamu_y)
         return pY
 
     def mean(self):

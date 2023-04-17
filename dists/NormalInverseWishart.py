@@ -4,14 +4,22 @@ from .Wishart import Wishart
 
 class NormalInverseWishart(): 
 
-    def __init__(self,lambda_mu_0,mu_0,nu_0,invV_0):
+    def __init__(self,lambda_mu_0=None,mu_0=None,nu_0=None,invV_0=None):
 
         self.event_dim = 1
         self.event_shape = mu_0.shape[-1:]
         self.batch_shape = mu_0.shape[:-1]
         self.batch_dim = mu_0.ndim - self.event_dim   
         self.dim = mu_0.shape[-1]
-        self.lambda_mu_0 = lambda_mu_0
+        if lambda_mu_0 is None:
+            self.lambda_mu_0 = torch.ones(mu_0.shape[:-1],requires_grad=False)
+        else:
+            self.lambda_mu_0 = lambda_mu_0
+        if nu_0 is None:
+            nu_0 = torch.ones(mu_0.shape[:-1],requires_grad=False)*(self.dim+2)
+        if invV_0 is None:
+            invV_0 = torch.zeros(mu_0.shape+(self.dim,),requires_grad=False)+torch.eye(self.dim,requires_grad=False)
+
         self.lambda_mu = self.lambda_mu_0
         self.mu_0 = mu_0
         self.mu = mu_0 + torch.randn(mu_0.shape,requires_grad=False)
@@ -106,7 +114,7 @@ class NormalInverseWishart():
 
     def KLqprior(self):
         KL = 0.5*(self.lambda_mu_0/self.lambda_mu - 1 + (self.lambda_mu/self.lambda_mu_0).log())*self.dim
-        KL = KL + 0.5*((self.mu-self.mu_0).unsqueeze(-1)*(self.mu-self.mu_0).unsqueeze(-2)*self.invU.mean()).sum(-1).sum(-1)
+        KL = KL + 0.5*self.lambda_mu_0*((self.mu-self.mu_0).unsqueeze(-1)*(self.mu-self.mu_0).unsqueeze(-2)*self.invU.mean()).sum(-1).sum(-1)
         for i in range(self.event_dim-1):
             KL = KL.sum(-1)
         KL = KL + self.invU.KLqprior()
@@ -118,7 +126,7 @@ class NormalInverseWishart():
 # ## Test niw
 # num_samples = 500
 # dim=2
-# batch_dim = 5
+# batch_dim = 
 # event_shape = (4,dim,)
 # batch_shape = (batch_dim+1,batch_dim,)
 

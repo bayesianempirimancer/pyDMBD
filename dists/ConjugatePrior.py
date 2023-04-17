@@ -22,24 +22,30 @@ class ConjugatePrior():
     def T(self,X):  # evaluate the sufficient statistic
         pass
 
-    def ET(self):  # expected value of the sufficient statistic given the natural parameters
+    def ET(self):  # expected value of the sufficient statistic given the natural parameters, self.nat_parms
         pass
 
-    def logZ(self):  # log partition function of the naturla parameters
+    def logZ(self):  # log partition function of the natural parameters often called A(\eta)
         pass
 
-    def logZ_ub(self): # upper bound on hte log partition function 
+    def logZ_ub(self): # upper bound on the log partition function 
         pass
 
     def ss_update(self,ET,lr=1.0):
         self.nat_parms = ET + self.nat_parms_0
+        while ET.ndim > self.event_dim + self.batch_dim:
+            ET = ET.sum(0)
+        self.nat_parms = self.nat_parms*(1-lr) + lr*(ET+self.nat_parms_0)
 
     def raw_update(self,X,p=None,lr=1.0):
         if p is None: 
             EmpT = self.T(X)
-        else:
-            sample_shape = p.shape[:-self.batch_dim]
-            EmpT = self.T(X.view(sample_shape+self.batch_shape+self.event_shape))*p.view(p.shape + self.nat_dim*(1,)) 
+        else:  # assumes p is sample by batch
+            if(self.batch_dim==0):
+                sample_shape = p.shape
+            else:
+                sample_shape = p.shape[:-self.batch_dim]
+            EmpT = self.T(X.view(sample_shape+self.batch_dim*(1,)+self.event_shape))*p.view(p.shape + self.nat_dim*(1,)) 
         while EmpT.ndim > self.event_dim + self.batch_dim:
             EmpT = EmpT.sum(0)
         self.ss_update(EmpT,lr)
@@ -48,7 +54,7 @@ class ConjugatePrior():
         pass
 
     def KL_qprior(self):
-        KL = KL_qprior_event(self)
+        KL = self.KL_qprior_event()
         for i in range(self.event_dim - self.event_dim_0):
             KL = KL.sum(-1)
 

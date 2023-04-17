@@ -27,13 +27,19 @@ class NormalGamma():
         return self.gamma.loggeomean().sum(-1)
 
     def EmuTinvSigmamu(self):
-        return (self.mu**2*self.gamma.mean()).sum(-1)
+        return (self.mu**2*self.gamma.mean()).sum(-1) + self.dim/self.lambda_mu
+
+    def EXTinvUX(self):
+        return (self.mu**2*self.gamma.mean()).sum(-1) + self.dim/self.lambda_mu
 
     def EinvSigma(self):
         return self.gamma.mean().unsqueeze(-1)*torch.eye(self.dim,requires_grad=False)
         
     def ESigma(self):
         return self.gamma.meaninv().unsqueeze(-1)*torch.eye(self.dim,requires_grad=False)
+
+    def Res(self):
+        return -0.5*self.EXTinvUX() + 0.5*self.ElogdetinvSigma() - 0.5*self.dim*np.log(2*np.pi)
 
     def EinvSigmamu(self):
         return self.gamma.mean()*self.mu
@@ -49,9 +55,6 @@ class NormalGamma():
         return self
 
     def ss_update(self,SExx,SEx,n, lr=1.0):
-        # SExx is batch x event-1 x dim 
-        # SEx  is batch x event-1  x dim
-        # n is batch
 
         lambda_mu = self.lambda_mu_0 + n
         mu = (self.lambda_mu_0.unsqueeze(-1)*self.mu_0 + SEx)/lambda_mu.unsqueeze(-1)
@@ -60,7 +63,7 @@ class NormalGamma():
         self.lambda_mu = (lambda_mu-self.lambda_mu)*lr + self.lambda_mu
         self.mu = (mu-self.mu)*lr + self.mu
 
-        self.gamma.ss_update(n.unsqueeze(-1)/2.0,SExx/2.0)
+        self.gamma.ss_update(0.5*n.unsqueeze(-1),0.5*SExx)
 
     def raw_update(self,X,p=None,lr=1.0):
 
@@ -93,6 +96,11 @@ class NormalGamma():
         # returns num_samples x num_dists
         # output should be num_samples  
 
+        out = -0.5*(X.pow(2)*self.gamma.mean()).sum(-1) + (X*self.EinvSigmamu()).sum(-1) - 0.5*(self.EXTinvUX())
+        out = out + 0.5*self.ElogdetinvSigma() - 0.5*self.dim*np.log(2*np.pi)
+
+
+
         out = -0.5*((X - self.mu)**2*self.gamma.mean()).sum(-1) + 0.5*self.gamma.loggeomean().sum(-1) - 0.5*self.dim*np.log(2*np.pi)
         for i in range(self.event_dim-1):
             out = out.sum(-1)
@@ -100,7 +108,7 @@ class NormalGamma():
 
     def KLqprior(self):
 
-        out = self.lambda_mu/2.0*((self.mu-self.mu_0)**2*self.gamma.mean()).sum(-1) 
+        out = self.lambda_mu_0/2.0*((self.mu-self.mu_0)**2*self.gamma.mean()).sum(-1) 
         out = out + self.dim/2.0*(self.lambda_mu_0/self.lambda_mu - (self.lambda_mu_0/self.lambda_mu).log() -1)
         for i in range(self.event_dim-1):
             out = out.sum(-1)
