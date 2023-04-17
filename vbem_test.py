@@ -515,43 +515,53 @@ import numpy as np
 from  matplotlib import pyplot as plt
 from dists import Delta
 from MultiNomialLogisticRegression import *
+print('Test Multinomial Logistic Regression')
+from  matplotlib import pyplot as plt
+from dists import Delta
+#from MultiNomialLogisticRegression import *
 n=4
 p=10
-num_samples = 2000
-W = 2.0*torch.randn(n,p)/np.sqrt(p)
+num_samples = 600
+W = 6*torch.randn(n,p)/np.sqrt(p)
 X = torch.randn(num_samples,p)
+B = torch.randn(n).sort()[0]/2
 
-logpY = X@W.transpose(-2,-1)
+
+logpY = X@W.transpose(-2,-1)#+B
 pY = (logpY - logpY.logsumexp(-1,True)).exp()
 
 Y = torch.distributions.OneHotCategorical(logits = logpY).sample()
 
 model = MultiNomialLogisticRegression(n,p,pad_X=True)
 
-model.raw_update(X,Y,iters = 10)
+model.raw_update(X,Y,iters =20,verbose=True)
 #model.update(Delta(X.unsqueeze(-1)),Y,iters =4)
 What = model.beta.mean().squeeze()
 
-print('Simple Predictions, i.e. map estimate of weights')
-psb = model.predict_simple(X)
+print('Predictions by lowerbounding with q(w|b,<psi^2>)')
+psb = model.predict(X)
 for i in range(n):
-    plt.scatter(pY.log()[:,i],psb.log()[:,i],alpha=0.5)    
+    plt.scatter(pY.log()[:,i],psb.log()[:,i])    
 plt.plot([pY.log().min(),0],[pY.log().min(),0])
 plt.show()
-
-print('VB Predictions, i.e. use mean of polyagamma distribution')
-psb2 = model.predict(X)
-for i in range(n):
-    plt.scatter(pY.log()[:,i],psb2.log()[:,i],alpha=0.5)    
-plt.plot([pY.log().min(),0],[pY.log().min(),0])
-plt.show()
-
-# print('Gibbs prediction, i.e. sample from polyagamma part of the posterior distribution (20 samples)')
-# psb2 = model.psb_given_w(X)
 # for i in range(n):
-#     plt.scatter(pY.log()[:,i],psb2.log()[:,i])    
-# plt.plot([pY.log().min(),0],[pY.log().min(),0])
+#     plt.scatter(pY[:,i],psb[:,i])    
+# plt.plot([0,1],[0,1])
 # plt.show()
+
+print('Predictions by marginaling out q(beta) with w = <w|b,<psi^2>>')
+psb2 = model.predict_2(X)
+for i in range(n):
+    plt.scatter(pY.log()[:,i],psb2.log()[:,i])    
+plt.plot([pY.log().min(),0],[pY.log().min(),0])
+plt.show()
+psb2 = model.predict(X)
+# for i in range(n):
+#     plt.scatter(pY[:,i],psb2[:,i])    
+# plt.plot([0,1],[0,1])
+# plt.show()
+print('Percent Correct   = ',((Y.argmax(-1)==psb.argmax(-1)).sum()/Y.shape[0]).data*100)
+print('Percent Correct_2 = ',((Y.argmax(-1)==psb2.argmax(-1)).sum()/Y.shape[0]).data*100)
 
 
 print('TEST NL REGRESSION Batched')
@@ -560,7 +570,7 @@ import time
 import torch
 import numpy as np
 from matplotlib import pyplot as plt
-from NLRegression import NLRegression
+from NLRegression import * 
 
 n=1
 p=10
@@ -568,7 +578,8 @@ hidden_dim = 1
 nc =  10
 num_samps=400
 t=time.time()
-model = NLRegression(n,p,hidden_dim,nc,batch_shape=(10,))
+model = NLRegression_low_rank(n,p,hidden_dim,nc,batch_shape=(10,))
+model2 = NLRegression_full_rank(n,p,nc,batch_shape=(10,))
 X = 4*torch.rand(num_samps,p)-2
 Y = torch.randn(num_samps,n)
 W_true = 3.0*torch.randn(p,n)/np.sqrt(p)
@@ -605,6 +616,28 @@ plt.scatter(U_true[:,0],Y[:,0],c='black')
 plt.scatter(U[:,0],Yhat[:,loc,0],c=pr[:,loc,:].argmax(-1).data)
 #plt.errorbar(U_true[:,0],Yhat[:,loc,0],yerr = Yerr[:,loc,0], fmt='.')
 plt.show()
+
+
+print('Test Multinomial NL Regression')
+from NLRegression_Multinomial import *
+n=1
+p=10
+nc=8
+num_samps = 1000
+X=torch.randn(num_samps,p)
+W = torch.randn(p,n)/np.sqrt(p)
+U = X@W
+Y=4.0*(2*U).tanh()
+
+model0 = NLRegression_Multinomial(n,p,nc,pad_X=True)
+model0.raw_update(X,Y,iters=20,lr=1,verbose=True)
+Yhat0 = model0.predict(X)[0].squeeze(-1)
+plt.scatter(U,Y,c='k',alpha=0.5)
+plt.scatter(U,Yhat0,c='r',alpha=0.5)
+plt.show()
+
+
+
 
 print('Test Poisson Mixture Model')
 from PoissonMixtureModel import *

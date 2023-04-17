@@ -1,43 +1,42 @@
 
 from DynamicMarkovBlanketDiscovery import *
-start_time=time.time()
-f = r"c://Users/brain/Desktop/movie_temp.mp4"
 from matplotlib import pyplot as plt
 from matplotlib.animation import FuncAnimation, FFMpegWriter
 from matplotlib import cm 
+start_time=time.time()
 
 # print('Test on Newtons Cradle Data')
 # from NewtonsCradle import NewtonsCradle
-# dmodel = NewtonsCradle(n_balls=5,ball_size=0.2,Tmax=1000,batch_size=100,g=1,leak=0.05/8,dt=0.05) 
+# dmodel = NewtonsCradle(n_balls=5,ball_size=0.2,Tmax=1000,batch_size=20,g=1,leak=0.05/8,dt=0.05) 
 
 # data_temp = dmodel.generate_data('random')[0]
 # data_temp = data_temp[0::5]
 # data = data_temp
 
-# # data_temp = dmodel.generate_data('1 + 1 ball object')[0]
-# # data_temp = data_temp[0::5]
-# # #data = data_temp
-# # data = torch.cat((data,data_temp),dim=1)
+# data_temp = dmodel.generate_data('1 + 1 ball object')[0]
+# data_temp = data_temp[0::5]
+# #data = data_temp
+# data = torch.cat((data,data_temp),dim=1)
 
 # data_temp = dmodel.generate_data('1 ball object')[0]
 # data_temp = data_temp[0::5]
 # data = torch.cat((data,data_temp),dim=1)
 
-# # data_temp = dmodel.generate_data('2 ball object')[0]
-# # data_temp = data_temp[0::5]
-# # data = torch.cat((data,data_temp),dim=1)
+# data_temp = dmodel.generate_data('2 ball object')[0]
+# data_temp = data_temp[0::5]
+# data = torch.cat((data,data_temp),dim=1)
 
-# # data_temp = dmodel.generate_data('3 ball object')[0]
-# # data_temp = data_temp[0::5]
-# # data = torch.cat((data,data_temp),dim=1)
+# #data_temp = dmodel.generate_data('3 ball object')[0]
+# #data_temp = data_temp[0::5]
+# #data = torch.cat((data,data_temp),dim=1)
 
-# # data_temp = dmodel.generate_data('2 + 2 ball object')[0]
-# # data_temp = data_temp[0::5]
-# # data = torch.cat((data,data_temp),dim=1)
+# # # data_temp = dmodel.generate_data('2 + 2 ball object')[0]
+# # # data_temp = data_temp[0::5]
+# # # data = torch.cat((data,data_temp),dim=1)
 
-# # data_temp = dmodel.generate_data('4 ball object')[0]
-# # data_temp = data_temp[0::5]
-# # data = torch.cat((data,data_temp),dim=1)
+# # # data_temp = dmodel.generate_data('4 ball object')[0]
+# # # data_temp = data_temp[0::5]
+# # # data = torch.cat((data,data_temp),dim=1)
 
 # dy = torch.zeros(2)
 # dy[1] = 1.0
@@ -49,14 +48,14 @@ from matplotlib import cm
 # data = torch.cat((data,v_data),dim=-1)
 
 
-# model = DMBD(obs_shape=data.shape[-2:],role_dims=(10,10,10),hidden_dims=(4,4,4),batch_shape=(),regression_dim = 0, control_dim=0)
+# model = DMBD(obs_shape=data.shape[-2:],role_dims=(10,10,10),hidden_dims=(4,4,4),batch_shape=(),regression_dim = -1, control_dim=0)
 
-# model.update(data,None,None,iters=100,latent_iters=1,lr=0.25)
-# model.update(data,None,None,iters=10,latent_iters=1,lr=1.0)
+# model.update(data,None,None,iters=90,latent_iters=1,lr=0.25)
+# model.update(data,None,None,iters=10,latent_iters=1,lr=0.95)
 # print('Generating Movie...')
-# f = r"c://Users/brain/Desktop/cradle.mp4"
+# f = r"C://Users/brain/OneDrive/Desktop/cradle.mp4"
 # ar = animate_results('sbz',f, xlim = (-1.6,1.6), ylim = (-0.2,1.2), fps=10)
-# ar.make_movie(model, data, (50,125,126,127))
+# ar.make_movie(model, data, (0,20,40,60))
 
 # sbz=model.px.mean()
 # B = model.obs_model.obs_dist.mean()
@@ -67,8 +66,16 @@ from matplotlib import cm
 # sbz = sbz.squeeze()
 # roles = roles.squeeze()
 # batch_num = 10
-# idx = model.obs_model.NA/model.obs_model.NA.sum()>0.001
-# plt.plot(roles[:,batch_num,:,0],roles[:,batch_num,:,1])
+# idx = model.obs_model.NA/model.obs_model.NA.sum()>0.01
+# plt.plot(roles[:,batch_num,idx,0],roles[:,batch_num,idx,1])
+
+# r1 = model.role_dims[0]
+# r2 = r1+model.role_dims[1]
+# r3 = r2+ model.role_dims[2]
+
+# plt.plot(roles[:,batch_num,list(range(0,r1)),0],roles[:,batch_num,list(range(0,r1)),1],color='r')
+# plt.plot(roles[:,batch_num,list(range(r1,r2)),0],roles[:,batch_num,list(range(r1,r2)),1],color='g')
+# plt.plot(roles[:,batch_num,list(range(r2,r3)),0],roles[:,batch_num,list(range(r2,r3)),1],color='b')
 # plt.show()
 # plt.plot(roles[:,batch_num,:,2],roles[:,batch_num,:,3])
 # plt.show() 
@@ -99,7 +106,7 @@ from matplotlib import cm
 # nc_v_data = v_data
 
 
-###################################################################
+# ###################################################################
 
 print('Test on life as we know it data set')
 print('Loading Data...')
@@ -123,19 +130,62 @@ v_data = v_data/v_data.std()
 data = torch.cat((data,v_data),dim=-1)
 
 print('Initializing X + V model....')
-model = DMBD(obs_shape=data.shape[-2:],role_dims=(12,3,3),hidden_dims=(8,2,2),regression_dim = -1, control_dim=0,number_of_objects=6)
+model = DMBD(obs_shape=data.shape[-2:],role_dims=(6,3,1),hidden_dims=(4,2,2),regression_dim = 0, control_dim=0,number_of_objects=6)
 print('Updating model X+V....')
-model.update(data,None,None,iters=40,latent_iters=1,lr=0.5)
-model.update(data,None,None,iters=20,latent_iters=1,lr=1)
+model.update(data,None,None,iters=40,latent_iters=1,lr=0.2)
+model.update(data,None,None,iters=10,latent_iters=1,lr=1)
 print('Making Movie')
-f = r"c://Users/brain/Desktop/wil.mp4"
+f = r"c://Users/brain/OneDrive/Desktop/wil.mp4"
 animate_results('particular',f).make_movie(model, data, (1,2,3,4,5,6,7,8,9,10,11))
 sbz=model.px.mean()
 B = model.obs_model.obs_dist.mean()
-#roles = B[...,:-1]@sbz + B[...,-1:]
-roles = B@sbz 
+if model.regression_dim==1:
+    roles = B[...,:-1]@sbz + B[...,-1:]
+else:
+    roles = B@sbz 
 sbz = sbz.squeeze()
 roles = roles.squeeze()[...,0:2]
+
+batch_num = 8
+temp1 = data[:,batch_num,:,0]
+temp2 = data[:,batch_num,:,1]
+rtemp1 = roles[:,batch_num,:,0]
+rtemp2 = roles[:,batch_num,:,1]
+
+idx = (model.assignment()[:,batch_num,:]==0)
+plt.scatter(temp1[idx],temp2[idx],color='y',alpha=0.5)
+ev_dim = model.role_dims[0]
+ob_dim = np.sum(model.role_dims[1:])
+
+for i in range(ev_dim):        
+    idx = (model.obs_model.assignment()[:,batch_num,:]==i)
+    plt.scatter(rtemp1[:,i],rtemp2[:,i])
+plt.title('Environment + Roles')
+plt.show()
+
+ctemp = model.role_dims[1]*('b',) + model.role_dims[2]*('r',)
+
+for j in range(model.number_of_objects):
+    idx = (model.assignment()[:,batch_num,:]==0)
+    plt.scatter(temp1[idx],temp2[idx],color='y',alpha=0.2)
+    for i in range(1+2*j,1+2*(j+1)):
+        idx = (model.assignment()[:,batch_num,:]==i)
+        plt.scatter(temp1[idx],temp2[idx])
+    plt.title('Object '+str(j+1) + ' (yellow is environment)')
+    plt.show()
+    
+    idx = (model.assignment()[:,batch_num,:]==0)
+    plt.scatter(temp1[idx],temp2[idx],color='y',alpha=0.2)
+    k=0
+    for i in range(ev_dim+ob_dim*j,ev_dim+ob_dim*(j+1)):        
+        idx = (model.obs_model.assignment()[:,batch_num,:]==i)
+        plt.scatter(rtemp1[:,i],rtemp2[:,i],color=ctemp[k])
+        k=k+1
+    plt.title('Object '+str(j+1) + 'roles')
+    plt.show()
+
+
+
 life_model = model
 life_data = data
 

@@ -157,7 +157,7 @@ class HMM():
         return ELL        
 
     def KLqprior(self):
-        KL = self.obs_dist.KLqprior().sum(-1) + self.transition.KLqprior() + self.initial.KLqprior()
+        KL = self.obs_dist.KLqprior().sum(-1) + self.transition.KLqprior() + self.initial.KLqprior()  # assumes default event_dim = 1
         for i in range(self.event_dim - 1):
             KL = KL.sum(-1)
         return KL

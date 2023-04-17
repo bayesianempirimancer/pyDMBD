@@ -14,6 +14,7 @@ class MVN_ard():
         self.mu = torch.randn(batch_shape + (dim,1),requires_grad=False)*scale
         self.invSigma = torch.zeros(batch_shape + (dim,dim),requires_grad=False) + torch.eye(dim,requires_grad=False)
         self.Sigma = self.invSigma
+        self.logdetinvSigma = self.invSigma.logdet()
         self.invSigmamu = self.invSigma@self.mu
         self.alpha = Gamma(torch.ones(batch_shape+(dim,),requires_grad=False),torch.ones(batch_shape+(dim,),requires_grad=False))
 
@@ -38,7 +39,9 @@ class MVN_ard():
             self.mu = self.Sigma@self.invSigmamu
             self.alpha.ss_update(0.5,0.5*self.EXXT().diagonal(dim1=-1,dim2=-2),lr)
 
-    def raw_update(self,X,p=None,lr=1.0):  # assumes X is a vector i.e. 
+        self.logdetinvSigma = self.invSigma.logdet()
+
+    def raw_update(self,X,p=None,lr=1.0):  # assumes X is a vector and p is sample x batch 
 
         if p is None:  
             SEx = X
@@ -84,7 +87,7 @@ class MVN_ard():
         return self.invSigmamu
 
     def ElogdetinvSigma(self):
-        return self.invSigma.logdet()
+        return self.logdetinvSigma
 
     def EX(self):
         return self.mean()

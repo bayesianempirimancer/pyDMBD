@@ -77,9 +77,9 @@ class DMBD(LinearDynamicalSystems):
 #       line forces the role model to be shared by all observation.  There is no difference ie computation time associaated with this choice
 #       only the memory requirements.  
         if self.unique_obs is True:
-            self.obs_model = ARHMM_prXRY(role_dim, obs_dim, hidden_dim, regression_dim, batch_shape = (n_obs,), mask = B_mask,pad_X=False).to_event(1)
+            self.obs_model = ARHMM_prXRY(role_dim, obs_dim, hidden_dim, regression_dim, batch_shape = batch_shape + (n_obs,), mask = B_mask,pad_X=False).to_event(1)
         else:   
-            self.obs_model = ARHMM_prXRY(role_dim, obs_dim, hidden_dim, regression_dim, batch_shape = (), mask = B_mask,pad_X=False)
+            self.obs_model = ARHMM_prXRY(role_dim, obs_dim, hidden_dim, regression_dim, batch_shape = batch_shape, mask = B_mask,pad_X=False)
         self.obs_model.transition.alpha_0 = self.obs_model.transition.alpha_0*role_mask
         self.obs_model.transition.alpha = self.obs_model.transition.alpha*role_mask
         self.set_latent_parms()
@@ -207,7 +207,8 @@ class DMBD(LinearDynamicalSystems):
 
         A_mask = torch.cat((sbz_mask,bz_mask),dim=-2)
         A_mask = matrix_utils.block_matrix_builder(torch.ones(hidden_dims[0],hidden_dims[0],requires_grad=False),sbz_mask,sbz_mask.transpose(-2,-1),bz_mask)
-        A_mask = torch.cat((A_mask,torch.ones(A_mask.shape[:-1]+(control_dim,))),dim=-1) 
+        Ac_mask = torch.ones(A_mask.shape[:-1]+(control_dim,))
+        A_mask = torch.cat((A_mask,Ac_mask),dim=-1) 
 
         Bb = torch.cat((torch.ones(role_dims[1],hidden_dims[1],requires_grad=False),torch.zeros(role_dims[1],hidden_dims[2],requires_grad=False)),dim=-1)
         Bz = torch.cat((torch.zeros(role_dims[2],hidden_dims[1],requires_grad=False),torch.ones(role_dims[2],hidden_dims[2],requires_grad=False)),dim=-1)
@@ -219,7 +220,8 @@ class DMBD(LinearDynamicalSystems):
             B_mask = matrix_utils.block_matrix_builder(B_mask,torch.zeros(B_mask.shape[0],Bbz.shape[1],requires_grad=False),torch.zeros(Bbz.shape[0],B_mask.shape[1]),Bbz)
 
         B_mask = B_mask.unsqueeze(-2).expand(B_mask.shape[:1]+(obs_dim,)+B_mask.shape[1:])
-        B_mask = torch.cat((B_mask,torch.ones(B_mask.shape[:-1]+(regression_dim,))),dim=-1) 
+        Br_mask = torch.ones(B_mask.shape[:-1]+(regression_dim,))
+        B_mask = torch.cat((B_mask,Br_mask),dim=-1) 
 
         bz = torch.ones(role_dims[1]+role_dims[2],role_dims[1]+role_dims[2],requires_grad=False)
         notbz = torch.zeros(bz.shape,requires_grad=False)
@@ -301,7 +303,7 @@ from matplotlib.animation import FuncAnimation, FFMpegWriter
 from matplotlib import cm
 
 class animate_results():
-    def __init__(self,assignment_type='sbz', f='../movie_temp', xlim = (-2.5,2.5), ylim = (-2.5,2.5), fps=20):
+    def __init__(self,assignment_type='sbz', f=r'./movie_temp.', xlim = (-2.5,2.5), ylim = (-2.5,2.5), fps=20):
         self.assignment_type = assignment_type
         self.f=f
         self.xlim = xlim
@@ -339,6 +341,6 @@ class animate_results():
         self.fig = plt.figure(figsize=(7,7))
         self.ax = plt.axes(xlim=self.xlim,ylim=self.ylim)
         self.scatter=self.ax.scatter([], [], cmap = cm.rainbow, c=[], vmin=0.0, vmax=1.0)
-        FuncAnimation(self.fig, self.animation_function, frames=range(fig_data.shape[0]*fig_data.shape[1]), fargs=(fig_data,fig_assignments,fig_confidence,), interval=5).save(self.f,writer= FFMpegWriter(fps=self.fps) )
-
+        ani = FuncAnimation(self.fig, self.animation_function, frames=range(fig_data.shape[0]*fig_data.shape[1]), fargs=(fig_data,fig_assignments,fig_confidence,), interval=5).save(self.f,writer= FFMpegWriter(fps=self.fps) )
+        plt.show()
 

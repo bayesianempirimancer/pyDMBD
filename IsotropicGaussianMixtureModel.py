@@ -1,15 +1,13 @@
 import torch
-import numpy as np
-from dists import NormalInverseWishart
 from dists import NormalGamma
 from dists import Mixture
 
-class GaussianMixtureModel(Mixture):
+class IsotropicGaussianMixtureModel(Mixture):
     def __init__(self,dim,n):
-        dist = NormalInverseWishart(torch.ones(dim,requires_grad=False),
+        dist = NormalGamma(torch.ones(dim,requires_grad=False),
             torch.zeros(dim,n,requires_grad=False),
-            torch.ones(dim,requires_grad=False)*(n+2),
-            torch.zeros(dim,n,n,requires_grad=False)+torch.eye(n,requires_grad=False))
+            torch.ones(dim,n,requires_grad=False),
+            torch.ones(dim,n,requires_grad=False))
         super().__init__(dist)
 
 ###################################THIS IS A MORE FULLY FEATURE VERSION, BUT NEEDS TESTING
