@@ -4,9 +4,9 @@ Dependencies:  torch, numpy, matplotlib
 
 The ultimate goal here is macroscopic object discovery.  The idea is that your data consists of a bunch of measurements of microscopic componenets which interact in such a way so as to form a macroscopic object.  Of course, in any given system not all of the microscopic elements will join together into an object and so the problem of macroscopic object discovery requires identifying which microscopic elements are part of the object and which are not.  In systems identification theory, a system is defined by the relationship between its inputs and outputs.  In a statistical setting, the union of the inputs and outputs of a sub-system is given by the Markov Blanket that statistically separates the sub-system from the system as a whole.  Thus the statistical problem of macroscopic object identification is one of Markov blanket discovery.  
 
-This algorithm uses dynamic Bayesian attention to assign labels to microscopic observables that identify that observable as part of a macroscopic object, the boundary or the envirobment.  Labels are dynamic allowing us to model objects that exchange matter with their envirobment or put on pants.  Underneath the labels is a latent dynamical system that has Markov blanket structure, i.e. x(t) = {s(t),b(t),z(t)} where object z and environment s do not directly interact.  If an obsevation, y_i is assigned to the object, then it is evolution is conditionally independent given only z(t).  
+This algorithm uses dynamic Bayesian attention to assign labels to microscopic observables that identify that observable as part of a macroscopic object, the boundary or the environment.  Labels are dynamic allowing us to model objects that exchange matter with their environment or put on pants.  Underneath the labels is a latent dynamical system that has Markov blanket structure, i.e. x(t) = {s(t),b(t),z(t)} where object z and environment s do not directly interact.  If an obsevation, y_i is assigned to the object, then it is evolution is conditionally independent given only z(t).  
 
-To impose MB structure on latent dynamics and observation we make judicious use of masks applied to the transition and emissions matrices.  This approach allwos for the discovery of multiple objects and blankets present in a common envirobment.  Specifically, two types of masks are currently implemented one identifies a single blanket that segregates the observables into object, environment, and boundary. The other segregates the observables into multiple objects each with its own blanket, which exist in a common environment. The former is the default and the latter is activated by setting the number of objects to a value greater than 1. The remainder of this explainer will focus on the single object case.
+To impose MB structure on latent dynamics and observation we make judicious use of masks applied to the transition and emissions matrices.  This approach allwos for the discovery of multiple objects and blankets present in a common environment.  Specifically, two types of masks are currently implemented one identifies a single blanket that segregates the observables into object, environment, and boundary. The other segregates the observables into multiple objects each with its own blanket, which exist in a common environment. The former is the default and the latter is activated by setting the number of objects to a value greater than 1. The remainder of this explainer will focus on the single object case.
 
 The algorithm assumes that latent linear dynamics drive a set of observables and evolve according to 
 
@@ -72,11 +72,11 @@ Upon completion:
                        for more than one object it goes env, b1, o1, b2, o2, ....
                         
       model.assignment() is (T, batch_shape, number_of_microscopic_objects) 
-                    and gives the map estimate of the assignment to envirobment (0), boundary (1), and object (2)
+                    and gives the map estimate of the assignment to environment (0), boundary (1), and object (2)
                     for number_of_objects > 1 the boundary and internal nodes of the n-th object have a value of 2*(n-1)+1 2*n respetively
                     
       model.particular_assignment() is (T,batch_shape, number_of_microscopic_objects)
-                    and give the map estimate of the assignment to envirobment (0), and (boundary + object) (1)
+                    and give the map estimate of the assignment to environment (0), and (boundary + object) (1)
                     This is 'particularly' useful when there are many macroscopic objects as a value of n corresponds to an assignment
                     of the observation to either the boundary or internal state of object n.  
 
