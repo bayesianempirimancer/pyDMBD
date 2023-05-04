@@ -136,3 +136,40 @@ class ReducedRankRegression():
 
 
 
+
+num_samps = 2000
+n=10
+p=20
+dim=2
+
+from matplotlib import pyplot as plt
+model = ReducedRankRegression(n,p,2*dim,batch_shape = (6,),pad_X=True,independent=False)
+U=torch.randn(num_samps,dim)
+B=torch.randn(p,dim)/np.sqrt(dim)
+A=torch.randn(n,dim)/np.sqrt(dim)
+
+W = A@B.pinverse()
+
+X=U@B.transpose(-2,-1) + torch.randn(num_samps,p)/p
+Y=U@A.transpose(-2,-1) + torch.randn(num_samps,n)/n
+
+model.raw_update(X.unsqueeze(-2),Y.unsqueeze(-2),iters=10,lr=1,verbose=True)
+#model.update(X.unsqueeze(-2),Y.unsqueeze(-2),iters=10,lr=1,verbose=True)
+What = model.A.mean()@model.B.mean().pinverse()
+idx = model.logZ.argmax()
+plt.scatter(W,What[idx])
+plt.title('Weights')
+minW = W.min()
+maxW = W.max()
+plt.plot([minW,maxW],[minW,maxW],'k')
+plt.show()
+
+pY = model.predict(X.unsqueeze(-2).unsqueeze(-1))
+#pY = model.predict(X.unsqueeze(-1))
+plt.scatter(Y,pY.mean().squeeze(-1)[...,idx,:])
+minY = Y.min()
+maxY = Y.max()
+plt.plot([minY,maxY],[minY,maxY],'k')
+plt.title('Predictions')
+plt.show()
+

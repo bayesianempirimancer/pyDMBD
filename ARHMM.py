@@ -1,8 +1,9 @@
-# Variational Bayesian Expectation Maximization for linear regression and mixtures of linear models
-# with Gaussian observations 
+# Variational Bayesian Expectation Maximization Autoregressive HMM.  This is a subclass of HMM.
+# It assumes a generative model of the form: 
+#     p(y_t|x^t,z_t) = N(y_t|A_z^t x^t + b_z_t, Sigma_z_t)
+# where z_t is HMM.  
 
 import torch
-import numpy as np
 from dists import MatrixNormalWishart
 from dists import MultivariateNormal_vector_format
 from dists.utils import matrix_utils
@@ -61,8 +62,7 @@ class ARHMM_prXRY(HMM):
 
         Sigma = matrix_utils.block_diag_matrix_builder(XRY[0].ESigma(),torch.zeros(XRY[0].shape[:-2]+(self.p2,self.p2),requires_grad=False))
         mu = torch.cat((XRY[0].mean(),XRY[1]),dim=-2)
-        prXR = MultivariateNormal_vector_format(mu=mu,Sigma=Sigma)
-        return self.obs_dist.Elog_like_given_pX_pY(prXR,XRY[2])
+        return self.obs_dist.Elog_like_given_pX_pY(MultivariateNormal_vector_format(mu=mu,Sigma=Sigma),XRY[2])
 
     def update_obs_parms(self,XRY,lr):
         Sigma = matrix_utils.block_diag_matrix_builder(XRY[0].Sigma,torch.zeros(XRY[0].shape[:-2]+(self.p2,self.p2),requires_grad=False))

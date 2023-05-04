@@ -56,6 +56,13 @@ class MultivariateNormal_vector_format():
         event_dim = self.event_dim - 2
         return MultivariateNormal_vector_format(mu,Sigma,invSigmamu,invSigma).to_event(event_dim)
 
+    def combiner(self,other):
+        self.invSigma = self.invSigma+other.invSigma
+        self.invSigmamu = self.invSigmamu+other.invSigmamu
+        self.Sigma = None
+        self.mu = None
+        return self
+
     def mean(self):
         if self.mu is None:
             self.mu = self.invSigma.inverse()@self.invSigmamu

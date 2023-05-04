@@ -115,9 +115,9 @@ class DMBD(LinearDynamicalSystems):
         px4r = MultivariateNormal_vector_format(mu = self.px.mu.expand(target_shape + (self.hidden_dim,1)),
                                                 Sigma = self.px.Sigma.expand(target_shape + (self.hidden_dim,self.hidden_dim)),
                                                 invSigmamu = self.px.invSigmamu.expand(target_shape + (self.hidden_dim,1)),
-                                                invSigma = self.px.invSigma.expand(target_shape + (self.hidden_dim,self.hidden_dim)))
+                                                invSigma = self.px.invSigma.expand(target_shape + (self.hidden_dim,self.hidden_dim))).unsqueeze(-3)
 
-        self.obs_model.update_states((px4r.unsqueeze(-3),r.unsqueeze(-3),Delta(y.unsqueeze(-3))))  
+        self.obs_model.update_states((px4r,r.unsqueeze(-3),Delta(y.unsqueeze(-3))))  
 
     def update_obs_parms(self,y,r,lr=1.0):
         self.obs_model.update_markov_parms(lr)
@@ -173,17 +173,23 @@ class DMBD(LinearDynamicalSystems):
                 self.update_assignments(y,r)  # compute the ss for the markov part of the obs model
                 self.update_latents(y,u,r)  # compute the ss for the latent 
 
+            # t1 = time.time()
+            # print('update assignments')
             self.update_assignments(y,r)  
+            # print('done in ',time.time()-t1,' seconds')
+            # t1 = time.time()
+            # print('update latents')
             self.update_latents(y,u,r)  
+            # print('done in ',time.time()-t1,' seconds')
             idx = self.obs_model.p>0
             mask_temp = self.obs_model.transition.loggeomean()>-torch.inf
             ELBO_contrib_obs = (self.obs_model.transition.loggeomean()[mask_temp]*self.obs_model.SEzz[mask_temp]).sum()
             ELBO_contrib_obs = ELBO_contrib_obs + (self.obs_model.initial.loggeomean()*self.obs_model.SEz0).sum()
             ELBO_contrib_obs = ELBO_contrib_obs - (self.obs_model.p[idx].log()*self.obs_model.p[idx]).sum()
             ELBO = self.ELBO() + ELBO_contrib_obs
-            self.update_obs_parms(y, r, lr=lr)
             self.update_latent_parms(p=None,lr = lr)  # updates parameters of latent dynamics
-            print('Percent Change in ELBO = ',((ELBO-ELBO_last)/ELBO_last.abs()).numpy()*100,  '  Iteration Time = ',time.time()-t)
+            self.update_obs_parms(y, r, lr=lr)
+            print('Percent Change in ELBO = ',((ELBO-ELBO_last)/ELBO_last.abs()).numpy()*100,  '   Iteration Time = ',(time.time()-t))
             self.ELBO_save = torch.cat((self.ELBO_save,ELBO*torch.ones(1)),dim=-1)
 
 #### DMBD MASKS
@@ -323,7 +329,7 @@ class animate_results():
 
 
         if(self.assignment_type == 'role'):
-            rn = model.role_dim[0] + model.number_of_objects*(model.role_dim[1]+model.role_dim[2])
+            rn = model.role_dims[0] + model.number_of_objects*(model.role_dims[1]+model.role_dims[2])
             assignments = model.obs_model.assignment()/(rn-1)
             confidence = model.obs_model.assignment_pr().max(-1)[0]
         elif(self.assignment_type == 'sbz'):

@@ -81,7 +81,8 @@ class MatrixNormalWishart():
             SEyx = SEyx*self.X_mask.unsqueeze(-2)
         invV = self.invV_0 + SExx
         muinvV = self.mu_0@self.invV_0 + SEyx
-        mu = muinvV @ invV.inverse()
+        mu = torch.linalg.solve(invV,muinvV.transpose(-2,-1)).transpose(-2,-1)
+#        mu = muinvV @ invV.inverse()
 
         SEyy = SEyy - mu@invV@mu.transpose(-2,-1) + self.mu_0@self.invV_0@self.mu_0.transpose(-2,-1)
         self.invU.ss_update(SEyy,n,lr)
@@ -90,8 +91,10 @@ class MatrixNormalWishart():
         self.mu = (mu-self.mu)*lr + self.mu
         if(self.mask is not None):
             self.mu = self.mu*self.mask
-        self.V = self.invV.inverse()
-        self.logdetinvV = self.invV.logdet()
+
+        self.invV_d, self.invV_v = torch.linalg.eigh(self.invV) 
+        self.V = self.invV_v@(1.0/self.invV_d.unsqueeze(-1)*self.invV_v.transpose(-2,-1))
+        self.logdetinvV = self.invV_d.log().sum(-1)
 
     def update(self,pX,pY,p=None,lr=1.0):
         if p is None:
@@ -253,7 +256,15 @@ class MatrixNormalWishart():
                 Residual = -0.5*(pY.EXXT()*self.EinvSigma()).sum(-1).sum(-1) - 0.5*self.n*np.log(2.0*np.pi) + 0.5*self.ElogdetinvSigma()
             return invSigma_x_x, invSigmamu_x, Residual
 
+    def forward(self,X_post,Y_like=None):
+        # The idea here is to compute p(y|x_obs,y_obs) = p(obs|y)p(y|x)p(x|obs)
+        # Y_like is the gaussian likelihood of p(obs|y)
+        # X_post is the guassian posterior of p(x|obs)
+        pass
 
+    def backward(self,Y_like):
+        # The idea here is to compute p(y_obs|x) = p(obs|y)p(y|x)
+        return self.Elog_like_X_given_pY(Y_like)
 
     def predict(self,X):
 
@@ -287,6 +298,9 @@ class MatrixNormalWishart():
 
     def mean(self):
         return self.mu
+
+    def var(self):
+        return self.ESigma().diagonal(dim1=-1,dim2=-2).unsqueeze(-1)*self.V.diagonal(dim1=-1,dim2=-2).unsqueeze(-2)
 
     ### Compute special expectations used for VB inference
     def EinvUX(self):
@@ -330,6 +344,7 @@ class MatrixNormalWishart():
 
     def ESigma(self):  
         return self.invU.ESigma()
+
 
 # print('TEST VANILLA Matrix Normal Wishart')
 # dim=3

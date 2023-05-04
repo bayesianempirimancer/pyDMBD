@@ -636,8 +636,46 @@ plt.scatter(U,Y,c='k',alpha=0.5)
 plt.scatter(U,Yhat0,c='r',alpha=0.5)
 plt.show()
 
+print('Test Tensor Normal Wishart')
+from dists import TensorNormalWishart
 
+batch_shape = (2,)
+model = TensorNormalWishart((4,3,2),batch_shape=batch_shape)
+X = torch.randn((400,)+batch_shape + (4,3,2))
+A = torch.randn(batch_shape+(4,4))
+B = torch.randn(batch_shape + (3,3))
+C = torch.randn(batch_shape + (2,2))
 
+ABC = A.view(batch_shape + (4,1,1,4,1,1))*B.view(batch_shape + (1,3,1,1,3,1))*C.view(batch_shape + (1,1,2,1,1,2))
+AAT = A@A.transpose(-2,-1)
+BBT = B@B.transpose(-2,-1)
+CCT = C@C.transpose(-2,-1)
+ABCABCT = AAT.view(batch_shape + (4,1,1,4,1,1))*BBT.view(batch_shape + (1,3,1,1,3,1))*CCT.view(batch_shape +(1,1,2,1,1,2))
+
+X = X - X.mean(0,keepdim=True)
+X = (X.view((400,)+batch_shape+(1,1,1,4,3,2))*ABC).sum((-3,-2,-1))
+
+alpha = AAT.det()**(1/4)*BBT.det()**(1/3)*CCT.det()**(1/2)
+AAT = AAT/AAT.det().unsqueeze(-1).unsqueeze(-1)**(1/4)
+BBT = BBT/BBT.det().unsqueeze(-1).unsqueeze(-1)**(1/3)
+CCT = CCT/CCT.det().unsqueeze(-1).unsqueeze(-1)**(1/2)
+
+model.raw_update(X,lr=1)
+from matplotlib import pyplot as plt
+
+plt.scatter(AAT,model.invU[0].ESigma().squeeze())
+plt.scatter(BBT,model.invU[1].ESigma().squeeze())
+plt.scatter(CCT,model.invU[2].ESigma().squeeze())
+m1 = torch.tensor([AAT.min(),BBT.min(),CCT.min()]).min()
+m2 = torch.tensor([AAT.max(),BBT.max(),CCT.max()]).max()
+plt.plot([m1,m2],[m1,m2])
+plt.show()
+
+plt.scatter(ABCABCT.reshape(ABCABCT.numel()),model.ESigma().reshape(model.ESigma().numel()))
+m1 = ABCABCT.min()
+m2 = ABCABCT.max()
+plt.plot([m1,m2],[m1,m2])
+plt.show()
 
 print('Test Poisson Mixture Model')
 from PoissonMixtureModel import *

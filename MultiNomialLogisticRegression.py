@@ -21,8 +21,6 @@ class MultiNomialLogisticRegression():
         n=n-1
         self.n=n
         self.p=p
-#        self.betaML = MultivariateNormal_vector_format(mu = torch.randn(batch_shape + (n,p,1)), Sigma = torch.eye(p) + torch.zeros(batch_shape + (n,p,p)), 
-#                                                    invSigma = torch.eye(p) + torch.zeros(batch_shape + (n,p,p)), invSigmamu = torch.zeros(batch_shape + (n,p,1)))
         self.beta = MVN_ard(p,batch_shape=(n,))
         self.beta.mu = self.beta.mu/np.sqrt(self.p)
         self.pad_X = pad_X               
@@ -61,6 +59,38 @@ class MultiNomialLogisticRegression():
 
             self.beta.ss_update(SExx,SEyx,lr=lr)
 
+
+    def update(self,pX,pY,iters=1,p=None,lr=1,verbose=True):
+
+        ELBO = self.ELBO_last
+        if self.pad_X is True:
+            X = torch.cat((X,torch.ones(X.shape[:-1]+(1,))),dim=-1)
+        N = pY.sum(-1,True)-(Y.cumsum(-1)-Y)
+        YmN = pY-N/2.0   
+        pgb = N[...,:-1]
+        YmN = YmN[...,:-1]
+
+        X = pX.mean(0).unsqueeze(-3)
+        EXXT = pX.EXXT().unsqueeze(-3)
+        SEyx = (YmN.view(YmN.shape + (1,1))*X).sum(0)  # sample x batch x n x p 
+        while SEyx.ndim > self.event_dim + self.batch_dim + 1:
+            SEyx = SEyx.sum(0) 
+
+        for i in range(iters):
+            pgc = (EXXT*(self.beta.EXXT())).sum(-1).sum(-1).sqrt()  # should have shape (sample x batch x n)
+            Ew = pgb/2.0/pgc*(pgc/2.0).tanh()
+
+            SExx =  (Ew.view(Ew.shape + (1,1))*EXXT).sum(0)  # sample x batch x n x p x p 
+            while SExx.ndim > self.event_dim + self.batch_dim + 1:
+                SExx = SExx.sum(0)
+            
+            ELBO_last = ELBO
+            ELBO = (SEyx*self.beta.mean()).sum() - (pgb*(0.5*pgc).cosh().log()).sum() - pgb.sum()*np.log(2) - self.KLqprior()
+            self.ELBO_last = ELBO
+            if verbose is True: print("Percent Change in ELBO: ",((ELBO-ELBO_last)/ELBO_last.abs()*100).data)
+            self.beta.ss_update(SExx,SEyx,lr=lr)
+
+
     def ELBO(self,X=None,Y=None):
         if X is not None:
             return self.Elog_like(X,Y).sum() - self.KLqprior()
@@ -70,7 +100,7 @@ class MultiNomialLogisticRegression():
     def KLqprior(self):
         return self.beta.KLqprior().sum(-1)
 
-    def Elog_like_X(self,X):  # slower than predict because some calculation are repeated
+    def Elog_like_X(self,X):  # slower than predict because some calculations are repeated
         Y = torch.eye(self.n+1).unsqueeze(-2)
         return self.Elog_like(X,Y).transpose(0,-1)
 

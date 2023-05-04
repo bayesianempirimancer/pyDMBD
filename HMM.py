@@ -7,7 +7,7 @@ class HMM():
     # As with the mixture model, the last batch dimension of the observation distribution is the 
     # dimension of the mixture.  Similarly, the observations themselves are assumed to be sample x obs_batch_shape[:-1] x (1,) x obs_event_shape
     #                                                                which is the same as sample x mix_batch_shape x (1,) x obs_event_shape
-    def __init__(self, obs_dist):        
+    def __init__(self, obs_dist, transition_mask=None):        
         self.obs_dist = obs_dist
         # assume that the first dimension the batch_shape is the dimension of the HMM
         self.hidden_dim = obs_dist.batch_shape[-1]
@@ -15,8 +15,13 @@ class HMM():
         self.event_shape = (self.hidden_dim,)
         self.batch_shape = obs_dist.batch_shape[:-1]        
         self.batch_dim = len(self.batch_shape)
+        self.transition_mask = transition_mask
 
         self.transition = Dirichlet(0.5*torch.ones(self.batch_shape+(self.hidden_dim,self.hidden_dim),requires_grad=False)+1.0*torch.eye(self.hidden_dim,requires_grad=False)).to_event(1)
+        if transition_mask is not None:
+            self.transition.alpha_0 = self.transition.alpha_0 * transition_mask
+            self.transition.alpha = self.transition.alpha * transition_mask
+            
         self.initial = Dirichlet(0.5*torch.ones(self.batch_shape+(self.hidden_dim,),requires_grad=False))
         self.initial.alpha = self.initial.alpha_0
         self.sumlogZ = -torch.inf
@@ -44,24 +49,24 @@ class HMM():
     def backward_step(self,logits,observation_logits):
         return (logits.unsqueeze(-2) + observation_logits.unsqueeze(-2) + self.transition.loggeomean()).logsumexp(-1)
 
-    def forward_backward_logits(self,observation_logits):
+    def forward_backward_logits(self,fw_logits):
         # Assumes that time is in the first dimension of the observation
-        T = observation_logits.shape[0]
-        logits = self.transition.loggeomean() + observation_logits.unsqueeze(-2)
+        # On input fw_logits = observation_logits. 
+#        T = observation_logits.shape[0]
+        T = fw_logits.shape[0]
 
-        fw_logits = torch.zeros(observation_logits.shape,requires_grad=False)
-#        xi_logits = torch.zeros((T-1,)+observation_logits.shape[1:]+(self.hidden_dim,),requires_grad=False)
-#        bw_logits = torch.zeros(observation_logits.shape,requires_grad=False)
+#        logits = self.transition.loggeomean() + observation_logits.unsqueeze(-2)
+#        fw_logits = torch.zeros(observation_logits.shape,requires_grad=False)
+#        fw_logits[0] = (logits[0] + self.initial.loggeomean().unsqueeze(-1)).logsumexp(-2)
 
-        fw_logits[0] = (logits[0] + self.initial.loggeomean().unsqueeze(-1)).logsumexp(-2)
+        fw_logits[0] = (fw_logits[0].unsqueeze(-2) + self.initial.loggeomean().unsqueeze(-1)).logsumexp(-2)
 
         for t in range(1,T):
-            fw_logits[t] = (fw_logits[t-1].unsqueeze(-1) + logits[t]).logsumexp(-2)
-#            bw_logits[T-1-i] = (bw_logits[T-i].unsqueeze(-2) + logits[T-i]).logsumexp(-1)
-        logZ = fw_logits[-1].logsumexp(-1)
-
-#        bw_logits = torch.zeros(fw_logits.shape[1:],requires_grad=False)
-        fw_logits = fw_logits - fw_logits.logsumexp(-1,True)
+#            fw_logits[t] = (fw_logits[t-1].unsqueeze(-1) + logits[t]).logsumexp(-2)
+            fw_logits[t] = (fw_logits[t-1].unsqueeze(-1) + fw_logits[t].unsqueeze(-2) + self.transition.loggeomean()).logsumexp(-2)
+        logZ = fw_logits[-1].logsumexp(-1,True)
+        fw_logits = fw_logits - logZ
+        logZ = logZ.squeeze(-1)
         SEzz = torch.zeros(fw_logits.shape[1:]+(self.hidden_dim,),requires_grad=False)
         for t in range(T-2,-1,-1):
             ### Backward Smoothing
@@ -69,12 +74,6 @@ class HMM():
             xi_logits = (temp - temp.logsumexp(-2,keepdim=True)) + fw_logits[t+1].unsqueeze(-2)
             fw_logits[t] = xi_logits.logsumexp(-1)
             xi_logits = (xi_logits - xi_logits.logsumexp([-1,-2], keepdim=True))
-            ### Backward Inference
-#            bw_logits = bw_logits.unsqueeze(-2) + logits[t+1]  #returns bw_logits at time t
-#            xi_logits = fw_logits[t].unsqueeze(-1) + bw_logits
-#            xi_logits = (xi_logits - xi_logits.logsumexp([-1,-2], keepdim=True))
-#            bw_logits = bw_logits.logsumexp(-1)
-#            fw_logits[t] = fw_logits[t] + bw_logits
             SEzz = SEzz + xi_logits.exp()
                         
         # Now do the initial step

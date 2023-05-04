@@ -162,7 +162,8 @@ class NLRegression_low_rank():
 
 
         self.W.mu = torch.randn(self.W.mu.shape)/np.sqrt(p)
-        self.A = MatrixNormalWishart(torch.zeros(batch_shape + (mixture_dim,n,hidden_dim+1),requires_grad=False))
+        self.A = MatrixNormalWishart(torch.zeros(batch_shape + (mixture_dim,n,hidden_dim+1),requires_grad=False),
+                                      U_0=torch.zeros(batch_shape + (mixture_dim,n,n),requires_grad=False) + torch.eye(n,requires_grad=False)*mixture_dim**2)
         # self.U =  NormalInverseWishart(torch.ones(batch_shape + (mixture_dim,),requires_grad=False), 
         #        torch.zeros(batch_shape + (mixture_dim,hidden_dim),requires_grad=False), 
         #        (hidden_dim+2)*torch.ones(batch_shape + (mixture_dim,),requires_grad=False),
@@ -298,7 +299,9 @@ class NLRegression_full_rank():
         self.batch_dim = len(batch_shape)
         self.independent = independent
 
-        self.A = MatrixNormalWishart(torch.zeros(batch_shape + (mixture_dim,n,p),requires_grad=False),pad_X=True)
+        self.A = MatrixNormalWishart(torch.zeros(batch_shape + (mixture_dim,n,p),requires_grad=False),
+                    U_0=torch.zeros(batch_shape + (mixture_dim,n,n),requires_grad=False) + torch.eye(n,requires_grad=False)*mixture_dim**2,
+                    pad_X=True)
         if independent == True:
             self.X =  NormalGamma(torch.ones(batch_shape + (mixture_dim,),requires_grad=False), 
                 torch.zeros(batch_shape + (mixture_dim,p),requires_grad=False), 

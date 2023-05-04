@@ -10,7 +10,6 @@ class MixtureofLinearDynamicalSystems():
         self.lds.expand_to_batch = True
         self.pi = Dirichlet(0.5*torch.ones(num_systems))
 
-
     def update(self, y, u, r,iters=1,lr=1):
         y,u,r = self.lds.reshape_inputs(y,u,r) 
         ELBO = -torch.tensor(torch.inf)

@@ -186,33 +186,36 @@ class LinearDynamicalSystems():
 
         # on return stores sufficient statistics with time integrated out, but not the remaining part of sample
 
-
-        invSigma, invSigmamu, Sigma, mu, Sigma_t_tp1, Sigma_x0_x0, mu_x0, logZ, logZ_b = self.forward_backward_loop(y,u,r)  # updates and stores self.px
-
         if self.px is None:
-            self.px = MultivariateNormal_vector_format(mu = mu,Sigma = Sigma, invSigma = invSigma, invSigmamu = invSigmamu)
-        else:   
-            self.px.mu=mu
-            self.px.Sigma=Sigma
-            self.px.invSigma = invSigma
-            self.px.invSigmamu = invSigmamu
+            self.px = MultivariateNormal_vector_format(mu = torch.zeros(y.shape[:-2]+(self.hidden_dim,1),requires_grad=False))
+
+        self.px.invSigma, self.px.invSigmamu, self.px.Sigma, self.px.mu, Sigma_t_tp1, Sigma_x0_x0, mu_x0, logZ, logZ_b = self.forward_backward_loop(y,u,r)  # updates and stores self.px
+
+#         invSigma, invSigmamu, Sigma, mu, Sigma_t_tp1, Sigma_x0_x0, mu_x0, logZ, logZ_b = self.forward_backward_loop(y,u,r)  # updates and stores self.px
+        # if self.px is None:
+        #     self.px = MultivariateNormal_vector_format(mu = mu,Sigma = Sigma, invSigma = invSigma, invSigmamu = invSigmamu)
+        # else:   
+        #     self.px.mu=mu
+        #     self.px.Sigma=Sigma
+        #     self.px.invSigma = invSigma
+        #     self.px.invSigmamu = invSigmamu
 
         # compute sufficient statistics $ note that these sufficient statistics are only integrated over time
         SE_x0_x0 = ((Sigma_x0_x0 + mu_x0 @ mu_x0.transpose(-2,-1)))
         SE_x0 = mu_x0
 
-        SE_x_x = ((mu@mu.transpose(-1,-2)+Sigma)).sum(0)
-        SE_xp_xp = SE_x_x - (mu[-1]@mu.transpose(-1,-2)[-1] - Sigma[-1])
+        SE_x_x = ((self.px.mu@self.px.mu.transpose(-1,-2)+self.px.Sigma)).sum(0)
+        SE_xp_xp = SE_x_x - (self.px.mu[-1]@self.px.mu.transpose(-1,-2)[-1] - self.px.Sigma[-1])
         SE_xp_xp = SE_xp_xp + SE_x0_x0
 
-        SE_x_u = ((mu@u.transpose(-2,-1))).sum(0)
-        SE_xp_u = ((mu[:-1] @ u[1:].transpose(-1,-2))).sum(0) + mu_x0 @ u[0].transpose(-2,-1)
+        SE_x_u = ((self.px.mu@u.transpose(-2,-1))).sum(0)
+        SE_xp_u = ((self.px.mu[:-1] @ u[1:].transpose(-1,-2))).sum(0) + mu_x0 @ u[0].transpose(-2,-1)
 
-        SE_xp_x = ((mu[:-1] @ mu[1:].transpose(-2,-1))).sum(0)  + (Sigma_t_tp1[:-1]).sum(0) #Sigma_0m1_0 now in last entry of fbw_Sigma_t_tp1
-        SE_xp_x = SE_xp_x + mu_x0 @ mu[0].transpose(-2,-1) + Sigma_t_tp1[-1]
+        SE_xp_x = ((self.px.mu[:-1] @ self.px.mu[1:].transpose(-2,-1))).sum(0)  + (Sigma_t_tp1[:-1]).sum(0) #Sigma_0m1_0 now in last entry of fbw_Sigma_t_tp1
+        SE_xp_x = SE_xp_x + mu_x0 @ self.px.mu[0].transpose(-2,-1) + Sigma_t_tp1[-1]
 
-        SE_x_r =  ((mu@r.transpose(-2,-1))).sum(0)
-        SE_x_y = ((mu@y.transpose(-2,-1))).sum(0)
+        SE_x_r =  ((self.px.mu@r.transpose(-2,-1))).sum(0)
+        SE_x_y = ((self.px.mu@y.transpose(-2,-1))).sum(0)
 
         SE_u_u = ((u@u.transpose(-2,-1))).sum(0)
         SE_r_r = ((r@r.transpose(-2,-1))).sum(0)
