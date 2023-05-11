@@ -82,22 +82,22 @@ class MatrixNormalGamma():
             SEyx = SEyx*self.X_mask.unsqueeze(-2)
         invV = self.invV_0 + SExx
         muinvV = self.mu_0@self.invV_0 + SEyx
-        V = invV.inverse()
-        mu = muinvV @ V
+        mu = torch.linalg.solve(invV,muinvV.transpose(-2,-1)).transpose(-2,-1)
 
-        SEyy = SEyy - (mu@invV@mu.transpose(-2,-1)).diagonal(dim1=-1,dim2=-2)
+        SEyy = SEyy - (mu@invV@mu.transpose(-2,-1)).diagonal(dim1=-2,dim2=-1)
         SEyy = SEyy + (self.mu_0@self.invV_0@self.mu_0.transpose(-2,-1)).diagonal(dim1=-1,dim2=-2)
 
         self.invV = (invV-self.invV)*lr + self.invV
-        self.V = self.invV.inverse()
-        self.invU.ss_update(SEyy,n.unsqueeze(-1),lr)
+        self.invV_d, self.invV_v = torch.linalg.eigh(self.invV) 
+        self.V = self.invV_v@(1.0/self.invV_d.unsqueeze(-1)*self.invV_v.transpose(-2,-1))
+        self.logdetinvV = self.invV_d.log().sum(-1)
 
+        self.invU.ss_update(SEyy,n.unsqueeze(-1),lr)
         if self.uniform_precision==True:
             self.invU.gamma.alpha = self.invU.gamma.alpha.sum(-1,keepdim=True)  # THIS IS A HACK
         self.mu = (mu-self.mu)*lr + self.mu
         if(self.mask is not None):
             self.mu = self.mu*self.mask
-        self.logdetinvV = self.invV.logdet()
 
     def update(self,pX,pY,p=None,lr=1.0):
 
