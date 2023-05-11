@@ -61,6 +61,7 @@ To fit the model just use the update method: model.update(y,u,r,lr=1,iters=1)
 
 Here T is the number of time points. To run a mini_batch you use latent_iters instead of iters. The logic here is that you should update latents and assignments as few times before updating any parameters. I obtained decent results with latent iters = 4.
 
+      model.px = None
       model.update(y_mini_batch,u_mini_batch,r_mini_batch,lr=lr,latent_iters=4)
 
 Upon completion: 
