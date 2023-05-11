@@ -65,7 +65,7 @@ class MultiNomialLogisticRegression():
         ELBO = self.ELBO_last
         if self.pad_X is True:
             X = torch.cat((X,torch.ones(X.shape[:-1]+(1,))),dim=-1)
-        N = pY.sum(-1,True)-(Y.cumsum(-1)-Y)
+        N = pY.sum(-1,True)-(pY.cumsum(-1)-pY)
         YmN = pY-N/2.0   
         pgb = N[...,:-1]
         YmN = YmN[...,:-1]
@@ -100,11 +100,26 @@ class MultiNomialLogisticRegression():
     def KLqprior(self):
         return self.beta.KLqprior().sum(-1)
 
-    def Elog_like_X(self,X):  # slower than predict because some calculations are repeated
+    def Elog_like(self,X,Y):
+        if self.pad_X is True:
+            X = torch.cat((X,torch.ones(X.shape[:-1]+(1,))),dim=-1)
+        N = Y.sum(-1,True)-(Y.cumsum(-1)-Y)
+        YmN = Y-N/2.0   # should have shape (sample x batch x n) 
+                        # X has sample x batch x p         
+        # Remove Superfluous final dimension of Y and N
+        pgb = N[...,:-1]
+        YmN = YmN[...,:-1]
+        X = X.unsqueeze(-2)  # expands to sample x batch x  p x 1
+        SEyxb = (YmN.unsqueeze(-1)*X*self.beta.mean().squeeze(-1)).sum(-1)
+        X = X.unsqueeze(-1)
+        pgc = (X*(self.beta.EXXT()@X)).sum(-2).squeeze(-1).sqrt()  # should have shape (sample x batch x n)
+        return SEyxb.sum(-1) - (pgb*(0.5*pgc).cosh().log()).sum(-1) - pgb.sum(-1)*np.log(2.0)
+
+    def log_predict(self,X):  # slower than predict because some calculations are repeated
         Y = torch.eye(self.n+1).unsqueeze(-2)
         return self.Elog_like(X,Y).transpose(0,-1)
 
-    def Elog_like_X_2(self,X):
+    def log_predict_2(self,X):
         # This version of the forward method exactly marginalizes out the
         # betas while using the expectation of w for the pg integration
         # This approach seems to perform ever so slightly worse than 
@@ -135,22 +150,7 @@ class MultiNomialLogisticRegression():
 
         return lnp
 
-    def Elog_like(self,X,Y):
-        if self.pad_X is True:
-            X = torch.cat((X,torch.ones(X.shape[:-1]+(1,))),dim=-1)
-        N = Y.sum(-1,True)-(Y.cumsum(-1)-Y)
-        YmN = Y-N/2.0   # should have shape (sample x batch x n) 
-                        # X has sample x batch x p         
-        # Remove Superfluous final dimension of Y and N
-        pgb = N[...,:-1]
-        YmN = YmN[...,:-1]
-        X = X.unsqueeze(-2)  # expands to sample x batch x  p x 1
-        SEyxb = (YmN.unsqueeze(-1)*X*self.beta.mean().squeeze(-1)).sum(-1)
-        X = X.unsqueeze(-1)
-        pgc = (X*(self.beta.EXXT()@X)).sum(-2).squeeze(-1).sqrt()  # should have shape (sample x batch x n)
-        return SEyxb.sum(-1) - (pgb*(0.5*pgc).cosh().log()).sum(-1) - pgb.sum(-1)*np.log(2.0)
-
-    def Elog_like_X(self,X):  # the forward method
+    def log_predict_1(self,X):  # the forward method
         # lower bounds the probability of each class by approximately integrating out
         # the pg augmentation variable using q(w) = pg(w|b,<psi^2>.sqrt())
         if self.pad_X is True:
@@ -167,13 +167,13 @@ class MultiNomialLogisticRegression():
     def predict(self,X):
         # lower bounds the probability of each class by approximately integrating out
         # the pg augmentation variable using q(w) = pg(w|b,<psi^2>.sqrt())
-        lnpsb = self.Elog_like_X(X)
+        lnpsb = self.log_predict(X)
         psb = (lnpsb-lnpsb.max(-1,True)[0]).exp()
         psb = psb/psb.sum(-1,True)
         return psb
 
     def predict_2(self,X):
-        lnpsb = self.Elog_like_X_2(X)
+        lnpsb = self.log_predict_2(X)
         psb = (lnpsb-lnpsb.max(-1,True)[0]).exp()
         psb = psb/psb.sum(-1,True)
         return psb
@@ -263,52 +263,52 @@ class MultiNomialLogisticRegression():
 
 
 
-# print('Test Multinomial Logistic Regression')
-# from  matplotlib import pyplot as plt
-# from dists import Delta
-# #from MultiNomialLogisticRegression import *
-# n=4
-# p=10
-# num_samples = 600
-# W = 6*torch.randn(n,p)/np.sqrt(p)
-# X = torch.randn(num_samples,p)
-# B = torch.randn(n).sort()[0]/2
+print('Test Multinomial Logistic Regression')
+from  matplotlib import pyplot as plt
+from dists import Delta
+#from MultiNomialLogisticRegression import *
+n=4
+p=10
+num_samples = 1000
+W = 4*torch.randn(n,p)/np.sqrt(p)
+X = torch.randn(num_samples,p)
+B = torch.randn(n).sort()[0]/2
 
 
-# logpY = X@W.transpose(-2,-1)#+B
-# pY = (logpY - logpY.logsumexp(-1,True)).exp()
+logpY = X@W.transpose(-2,-1)+B
+pY = (logpY - logpY.logsumexp(-1,True)).exp()
 
-# Y = torch.distributions.OneHotCategorical(logits = logpY).sample()
+Y = torch.distributions.OneHotCategorical(logits = logpY).sample()
 
-# model = MultiNomialLogisticRegression(n,p,pad_X=True)
+model = MultiNomialLogisticRegression(n,p,pad_X=True)
 
-# model.raw_update(X,Y,iters =20,verbose=True)
-# #model.update(Delta(X.unsqueeze(-1)),Y,iters =4)
-# What = model.beta.mean().squeeze()
+model.raw_update(X,Y,iters =20,verbose=True)
+#model.update(Delta(X.unsqueeze(-1)),Y,iters =4)
+What = model.beta.mean().squeeze()
 
-# print('Predictions by lowerbounding with q(w|b,<psi^2>)')
-# psb = model.predict(X)
+print('Predictions by lowerbounding with q(w|b,<psi^2>)')
+psb = model.predict(X)
+for i in range(n):
+    plt.scatter(pY.log()[:,i],psb.log()[:,i])    
+plt.plot([pY.log().min(),0],[pY.log().min(),0])
+plt.show()
 # for i in range(n):
-#     plt.scatter(pY.log()[:,i],psb.log()[:,i])    
-# plt.plot([pY.log().min(),0],[pY.log().min(),0])
+#     plt.scatter(pY[:,i],psb[:,i])    
+# plt.plot([0,1],[0,1])
 # plt.show()
-# # for i in range(n):
-# #     plt.scatter(pY[:,i],psb[:,i])    
-# # plt.plot([0,1],[0,1])
-# # plt.show()
 
-# print('Predictions by marginaling out q(beta) with w = <w|b,<psi^2>>')
-# psb2 = model.predict_2(X)
+print('Predictions by marginaling out q(beta) with w = <w|b,<psi^2>>')
+psb2 = model.predict_2(X)
+for i in range(n):
+    plt.scatter(pY.log()[:,i],psb2.log()[:,i])    
+plt.plot([pY.log().min(),0],[pY.log().min(),0])
+plt.show()
+psb2 = model.predict(X)
 # for i in range(n):
-#     plt.scatter(pY.log()[:,i],psb2.log()[:,i])    
-# plt.plot([pY.log().min(),0],[pY.log().min(),0])
+#     plt.scatter(pY[:,i],psb2[:,i])    
+# plt.plot([0,1],[0,1])
 # plt.show()
-# psb2 = model.predict(X)
-# # for i in range(n):
-# #     plt.scatter(pY[:,i],psb2[:,i])    
-# # plt.plot([0,1],[0,1])
-# # plt.show()
-# print('Percent Correct   = ',((Y.argmax(-1)==psb.argmax(-1)).sum()/Y.shape[0]).data*100)
-# print('Percent Correct_2 = ',((Y.argmax(-1)==psb2.argmax(-1)).sum()/Y.shape[0]).data*100)
+print('Percent Correct   = ',((Y.argmax(-1)==psb.argmax(-1)).sum()/Y.shape[0]).data*100)
+print('Percent Correct_2 = ',((Y.argmax(-1)==psb2.argmax(-1)).sum()/Y.shape[0]).data*100)
 
 

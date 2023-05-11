@@ -206,8 +206,8 @@ class NLRegression_low_rank():
             shift = log_p.max(-1,keepdim=True)[0]
             self.logZ = (log_p-shift).logsumexp(-1,keepdim=True) + shift
 
-            log_p = log_p - self.logZ
-            self.p = log_p.exp()
+            self.p = (log_p-shift).exp()
+            self.p = self.p/self.p.sum(-1,keepdim=True)
             self.logZ = self.logZ.squeeze(-1)
 
             SEuu = Sigma_u_u + mu_u@mu_u.transpose(-1,-2)

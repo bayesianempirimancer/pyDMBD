@@ -31,7 +31,7 @@ class NLRegression_Multinomial():
         AY = AY.view(AY.shape[:-2] + (self.batch_dim+1)*(1,) + AY.shape[-2:])
 
         for i in range(int(iters)):
-            log_p = self.Z.Elog_like_X(X)  # this is the forward routine
+            log_p = self.Z.log_predict(X)  # this is the forward routine
             log_p = self.A.Elog_like(AX,AY) + log_p
             self.logZ = log_p.logsumexp(-1).sum() 
             log_p = log_p - log_p.max(-1,keepdim=True)[0]
@@ -48,8 +48,15 @@ class NLRegression_Multinomial():
             self.Z.raw_update(X,self.p,lr=lr,verbose=False)
 
 
+    def Elog_like_X(self,Y):
+        AY = Y.view(Y.shape + (1,))
+        AY = AY.view(AY.shape[:-2] + (self.batch_dim+1)*(1,) + AY.shape[-2:])
+        invSigma,invSigmamu,Res = self.A.Elog_like_X(AY)
+
+
+
     def predict_full(self,X):
-        log_p = self.Z.Elog_like_X(X)  
+        log_p = self.Z.log_predict(X)  
         log_p = log_p - log_p.max(-1,keepdim=True)[0]
         p = log_p.exp()
         p = p/p.sum(-1,True)
@@ -57,7 +64,7 @@ class NLRegression_Multinomial():
         return self.A.predict(X.unsqueeze(-2).unsqueeze(-1)) + (p,)
 
     def predict(self,X):
-        log_p = self.Z.Elog_like_X(X)  
+        log_p = self.Z.log_predict(X)  
         log_p = log_p - log_p.max(-1,keepdim=True)[0]
         p = log_p.exp()
         p = p/p.sum(-1,True)
