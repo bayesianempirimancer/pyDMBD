@@ -45,7 +45,7 @@ class DiagonalWishart():
         return self.tensor_diag(self.gamma.mean())
 
     def ElogdetinvSigma(self):
-        return self.gamma.loggeomean.sum(-1)
+        return self.gamma.loggeomean().sum(-1)
 
     def mean(self):
         return self.tensor_diag(self.gamma.mean())
