@@ -399,7 +399,7 @@ class LinearDynamicalSystems():
 
         Sigma_t_tp1[-1] = Sigma_t_tp1[-1] @ self.QA_xp_x.transpose(-2,-1) @ (invGamma + invSigma_like[0] + self.invQ - self.QA_xp_x@Sigma_t_tp1[-1]*self.QA_xp_x.transpose(-2,-1)).inverse()#uses invSigma from tp1 which we probably should have stored 
         invGamma, invGammamu = self.backward_step(invGamma, invGammamu, invSigma_like[0], invSigmamu_like[0],u[0])
-        invGamma, invGammamu, Residual, logZ_b[-1] = self.backward_step_with_Residual(invGamma, invGammamu, Residual, invSigma_like[0], invSigmamu_like[0],Residual_like[0],u[0])
+#        invGamma, invGammamu, Residual, logZ_b[-1] = self.backward_step_with_Residual(invGamma, invGammamu, Residual, invSigma_like[0], invSigmamu_like[0],Residual_like[0],u[0])
         Sigma_x0_x0 = (invGamma+self.x0.EinvSigma()).inverse()   # posterior parameters for t
         mu_x0 = Sigma_x0_x0 @ (invGammamu + self.x0.EinvSigmamu().unsqueeze(-1))
 
