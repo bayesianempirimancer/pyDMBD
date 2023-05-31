@@ -67,6 +67,7 @@ class DMBD(LinearDynamicalSystems):
                 (hidden_dim+2)*torch.ones(batch_shape + offset,requires_grad=False),
                 torch.zeros(batch_shape + offset + (hidden_dim, hidden_dim),requires_grad=False)+torch.eye(hidden_dim,requires_grad=False),
                 ).to_event(len(obs_shape)-1)
+        self.x0.mu = torch.zeros(self.x0.mu.shape,requires_grad=False)
         
         self.A = MatrixNormalGamma(torch.zeros(batch_shape + offset + (hidden_dim,hidden_dim+control_dim),requires_grad=False) + torch.eye(hidden_dim,hidden_dim+control_dim,requires_grad=False),
             mask = A_mask,
@@ -78,19 +79,24 @@ class DMBD(LinearDynamicalSystems):
 #       only the memory requirements.  
         if self.unique_obs is True:
             self.obs_model = ARHMM_prXRY(role_dim, obs_dim, hidden_dim, regression_dim, batch_shape = batch_shape + (n_obs,), mask = B_mask,pad_X=False).to_event(1)
+            role_mask = role_mask.unsqueeze(0).unsqueeze(0)
         else:   
             self.obs_model = ARHMM_prXRY(role_dim, obs_dim, hidden_dim, regression_dim, batch_shape = batch_shape, mask = B_mask,pad_X=False)
+            role_mask = role_mask
         self.obs_model.transition.alpha_0 = self.obs_model.transition.alpha_0*role_mask
+        self.obs_model.transition_mask = role_mask
         self.obs_model.transition.alpha = self.obs_model.transition.alpha*role_mask
         self.set_latent_parms()
         self.log_like = -torch.tensor(torch.inf,requires_grad=False)
 
+        print("ELBO Calculation is Approximate!!!  Not Guaranteed to increase!!!")
 
     def log_likelihood_function(self,y,r):
         # y must be unsqueezed so that it has a singleton in the role dimension
         # Elog_like_X_given_pY returns invSigma, invSigmamu, Residual averaged over role assignments, but not over observations
-        invSigma, invSigmamu, Residual = self.obs_model.Elog_like_X_given_pY((Delta(y.unsqueeze(-3)),r.unsqueeze(-3))) 
-        return  invSigma.sum(-3,True), invSigmamu.sum(-3,True), Residual.sum(-1,True)
+        unsdim = self.obs_model.event_dim + 2
+        invSigma, invSigmamu, Residual = self.obs_model.Elog_like_X_given_pY((Delta(y.unsqueeze(-unsdim)),r.unsqueeze(-unsdim))) 
+        return  invSigma.sum(-unsdim,True), invSigmamu.sum(-unsdim,True), Residual.sum(-unsdim+2,True)
 
 
     def KLqprior(self):
@@ -112,21 +118,24 @@ class DMBD(LinearDynamicalSystems):
                 invSigma = torch.zeros(r.shape[:-3]+(1,self.hidden_dim,self.hidden_dim),requires_grad=False)+torch.eye(self.hidden_dim,requires_grad=False),
             )
         target_shape = r.shape[:-2]  
+        assert self.px is not None
+        unsdim = self.obs_model.event_dim + 2
         px4r = MultivariateNormal_vector_format(mu = self.px.mu.expand(target_shape + (self.hidden_dim,1)),
                                                 Sigma = self.px.Sigma.expand(target_shape + (self.hidden_dim,self.hidden_dim)),
                                                 invSigmamu = self.px.invSigmamu.expand(target_shape + (self.hidden_dim,1)),
-                                                invSigma = self.px.invSigma.expand(target_shape + (self.hidden_dim,self.hidden_dim))).unsqueeze(-3)
+                                                invSigma = self.px.invSigma.expand(target_shape + (self.hidden_dim,self.hidden_dim))).unsqueeze(-unsdim)
 
-        self.obs_model.update_states((px4r,r.unsqueeze(-3),Delta(y.unsqueeze(-3))))  
+        self.obs_model.update_states((px4r,r.unsqueeze(-unsdim),Delta(y.unsqueeze(-unsdim))))  
 
     def update_obs_parms(self,y,r,lr=1.0):
         self.obs_model.update_markov_parms(lr)
         target_shape = r.shape[:-2]  
+        unsdim = self.obs_model.event_dim + 2 
         px4r = MultivariateNormal_vector_format(mu = self.px.mu.expand(target_shape + (self.hidden_dim,1)),
                                                 Sigma = self.px.Sigma.expand(target_shape + (self.hidden_dim,self.hidden_dim)),
                                                 invSigmamu = self.px.invSigmamu.expand(target_shape + (self.hidden_dim,1)),
                                                 invSigma = self.px.invSigma.expand(target_shape + (self.hidden_dim,self.hidden_dim)))
-        self.obs_model.update_obs_parms((px4r.unsqueeze(-3),r.unsqueeze(-3),Delta(y.unsqueeze(-3))),lr)
+        self.obs_model.update_obs_parms((px4r.unsqueeze(-unsdim),r.unsqueeze(-unsdim),Delta(y.unsqueeze(-unsdim))),lr)
 
     def assignment_pr(self):
         p_role = self.obs_model.assignment_pr()
@@ -160,6 +169,15 @@ class DMBD(LinearDynamicalSystems):
             self.obs_model.p = self.obs_model.p/self.obs_model.p.sum(-1,True)
         super().update_latents(y,u,r,p=None,lr=lr)
 
+    def Elog_like(self,y,u,r,latent_iters=1,lr=1.0):
+        y,u,r = self.reshape_inputs(y,u,r) 
+        self.px = None
+        self.obs_model.p = None
+        for i in range(latent_iters):
+            self.update_assignments(y,r)  # compute the ss for the markov part of the obs model
+            self.update_latents(y,u,r)  # compute the ss for the latent 
+        return self.logZ - (self.obs_model.p*(self.obs_model.p+1e-8).log()).sum(0).sum((-1,-2))
+
     def update(self,y,u,r,iters=1,latent_iters = 1, lr=1.0, verbose=False):
         y,u,r = self.reshape_inputs(y,u,r) 
         ELBO = torch.tensor(-torch.inf,requires_grad=False)
@@ -181,16 +199,26 @@ class DMBD(LinearDynamicalSystems):
             # print('update latents')
             self.update_latents(y,u,r)  
             # print('done in ',time.time()-t1,' seconds')
-            idx = self.obs_model.p>0
-            mask_temp = self.obs_model.transition.loggeomean()>-torch.inf
-            ELBO_contrib_obs = (self.obs_model.transition.loggeomean()[mask_temp]*self.obs_model.SEzz[mask_temp]).sum()
-            ELBO_contrib_obs = ELBO_contrib_obs + (self.obs_model.initial.loggeomean()*self.obs_model.SEz0).sum()
-            ELBO_contrib_obs = ELBO_contrib_obs - (self.obs_model.p[idx].log()*self.obs_model.p[idx]).sum()
-            ELBO = self.ELBO() + ELBO_contrib_obs
+            # idx = self.obs_model.p>0
+            # mask_temp = self.obs_model.transition.loggeomean()>-torch.inf
+            # ELBO_contrib_obs = (self.obs_model.transition.loggeomean()[mask_temp]*self.obs_model.SEzz[mask_temp]).sum()
+            # ELBO_contrib_obs = ELBO_contrib_obs + (self.obs_model.initial.loggeomean()*self.obs_model.SEz0).sum()
+            # ELBO_contrib_obs = ELBO_contrib_obs - (self.obs_model.p[idx].log()*self.obs_model.p[idx]).sum()
+            # ELBO = self.ELBO().sum() + ELBO_contrib_obs
+            ELBO = self.ELBO().sum()
             self.update_latent_parms(p=None,lr = lr)  # updates parameters of latent dynamics
             self.update_obs_parms(y, r, lr=lr)
             print('Percent Change in ELBO = ',((ELBO-ELBO_last)/ELBO_last.abs()).numpy()*100,  '   Iteration Time = ',(time.time()-t))
             self.ELBO_save = torch.cat((self.ELBO_save,ELBO*torch.ones(1)),dim=-1)
+
+
+    def ELBO(self):
+        idx = self.obs_model.p>0
+        mask_temp = self.obs_model.transition.loggeomean()>-torch.inf
+        ELBO_contrib_obs = (self.obs_model.transition.loggeomean()[mask_temp]*self.obs_model.SEzz[mask_temp]).sum()
+        ELBO_contrib_obs = ELBO_contrib_obs + (self.obs_model.initial.loggeomean()*self.obs_model.SEz0).sum()
+        ELBO_contrib_obs = ELBO_contrib_obs - (self.obs_model.p[idx].log()*self.obs_model.p[idx]).sum()
+        return super().ELBO() + ELBO_contrib_obs
 
 #### DMBD MASKS
 
@@ -302,7 +330,76 @@ class DMBD(LinearDynamicalSystems):
         return A_mask, B_mask, role_mask
 
 
+    def plot_observation(self):
+        labels = ['B ','Z ']
+        labels = ['S ',] + self.number_of_objects*labels
+        rlabels = ['Br ','Zr ']
+        rlabels = ['Sr ',] + self.number_of_objects*rlabels
+        plt.imshow(self.obs_model.obs_dist.mean().abs().sum(-2))
+        for i, label in enumerate(labels):
+            if i == 0:
+                c = 'red'
+            elif i % 2 == 1:
+                pos = pos - 0.5
+                c = 'green'
+                if(self.number_of_objects>1):
+                    label = label+str((i+1)//2)
+            else:
+                pos = pos - 0.5
+                c = 'blue'
+                if(self.number_of_objects>1):
+                    label = label+str((i+1)//2)
 
+            pos = self.hidden_dims[0]/2.0 + i*(self.hidden_dims[1]+self.hidden_dims[2])/2.0
+            plt.text(pos, -1.5, label, color=c, ha='center', va='center', fontsize=10, weight='bold')
+            pos = self.role_dims[0]/2.0 + i*(self.role_dims[1]+self.role_dims[2])/2.0
+            if i == 0:
+                plt.text(-1.5, pos-0.5, rlabels[i], color=c, ha='center', va='center', fontsize=10, weight='bold', rotation=90)
+            else:
+                plt.text(-1.5, pos-0.5, rlabels[i]+str((i+1)//2), color=c, ha='center', va='center', fontsize=10, weight='bold', rotation=90)
+
+        plt.axis('off')  # Turn off the axis
+        plt.show()
+
+    def plot_transition(self,type='obs',use_mask = False):
+
+        labels = ['B ','Z ']
+        labels = ['S ',] + self.number_of_objects*labels
+
+        if type == 'obs':
+            if use_mask:
+                plt.imshow(self.obs_model.transition_mask.squeeze())
+            else:
+                plt.imshow(self.obs_model.transition.mean())
+        else:
+            if use_mask:
+                plt.imshow(self.A.mask.squeeze())
+            else:
+                plt.imshow(self.A.mean().abs().squeeze())
+        # Add text annotations for the labels (x-axis)
+        for i, label in enumerate(labels):
+            if type == 'obs':
+                pos = self.role_dims[0]/2.0 + i*(self.role_dims[1]+self.role_dims[2])/2.0
+            else:
+                pos = self.hidden_dims[0]/2.0 + i*(self.hidden_dims[1]+self.hidden_dims[2])/2.0
+            if i == 0:
+                c = 'red'
+            elif i % 2 == 1:
+                pos = pos - 0.5
+                c = 'green'
+                if(self.number_of_objects>1):
+                    label = label+str((i+1)//2)
+            else:
+                pos = pos - 0.5
+                c = 'blue'
+                if(self.number_of_objects>1):
+                    label = label+str((i+1)//2)
+            
+            plt.text(pos, -1.5, label, color=c, ha='center', va='center', fontsize=10, weight='bold')
+            plt.text(-1.5, pos, label, color=c, ha='center', va='center', fontsize=10, weight='bold', rotation=90)
+
+        plt.axis('off')  # Turn off the axis
+        plt.show()
 
 from matplotlib import pyplot as plt
 from matplotlib.animation import FuncAnimation, FFMpegWriter
@@ -349,4 +446,3 @@ class animate_results():
         self.scatter=self.ax.scatter([], [], cmap = cm.rainbow, c=[], vmin=0.0, vmax=1.0)
         ani = FuncAnimation(self.fig, self.animation_function, frames=range(fig_data.shape[0]*fig_data.shape[1]), fargs=(fig_data,fig_assignments,fig_confidence,), interval=5).save(self.f,writer= FFMpegWriter(fps=self.fps) )
         plt.show()
-

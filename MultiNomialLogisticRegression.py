@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 from MVN_ard import MVN_ard
+from dists import MultivariateNormal_vector_format
 
 class MultiNomialLogisticRegression():
     # VB updates for multnomial logistic regression using the polyagamma version of Jaakkola and Jordan's
@@ -12,7 +13,7 @@ class MultiNomialLogisticRegression():
     #       exp(phi)^a/(1+exp(phi))^b = 2^(-b)*exp((a-b/2)*phi)/cosh^b(phi/2)
     #
     # It is assumed that X is a matrix of size (sample x batch x p)  and Y is either probabilities or 
-    # a one hot tensor or a number of counts but must have tesor size = (sample x batch x n) 
+    # a one hot tensor or a number of counts but must have tensor size = (sample x batch x n) 
     def __init__(self,n,p,batch_shape = (),pad_X=True):
         print('Works but missing some features')
 
@@ -21,7 +22,7 @@ class MultiNomialLogisticRegression():
         n=n-1
         self.n=n
         self.p=p
-        self.beta = MVN_ard(p,batch_shape=(n,))
+        self.beta = MVN_ard(p,batch_shape=batch_shape + (n,))
         self.beta.mu = self.beta.mu/np.sqrt(self.p)
         self.pad_X = pad_X               
         self.batch_shape = batch_shape
@@ -115,9 +116,36 @@ class MultiNomialLogisticRegression():
         pgc = (X*(self.beta.EXXT()@X)).sum(-2).squeeze(-1).sqrt()  # should have shape (sample x batch x n)
         return SEyxb.sum(-1) - (pgb*(0.5*pgc).cosh().log()).sum(-1) - pgb.sum(-1)*np.log(2.0)
 
+    def Elog_like_X(self,pY, iters=2):
+        N = pY.sum(-1,True)-(pY.cumsum(-1)-pY)
+        YmN = pY-N/2.0   
+        pgb = N[...,:-1]
+        YmN = YmN[...,:-1]  # sample x batch x n
+
+        BBT = self.beta.EXXT()
+        pgc = self.beta.EXXT().sum(-1).sum(-1).sqrt()  # should have shape (sample x batch x n)
+        Ew = pgb/2.0/pgc*(pgc/2.0).tanh()
+
+        for i in range(iters):
+            if self.pad_X is True:
+                px = MultivariateNormal_vector_format(invSigmamu = (YmN.view(YmN.shape+(1,1))*self.beta.mean()[...,:-1,-1:] - Ew.view(Ew.shape + (1,1))*BBT[...,:-1,-1:]).sum(-3),
+                                                    invSigma = (Ew.view(Ew.shape+(1,1))*BBT[...,:-1,:-1]).sum(-3))            
+                pgc = ((BBT[...,:-1,:-1]*px.EXXT().unsqueeze(-3)).sum(-1).sum(-1)+2*(BBT[...,-1:,:-1]@px.mean().unsqueeze(-3)).squeeze(-1).squeeze(-1)+BBT[...,-1,-1]).sqrt()  # should have shape (sample x batch x n)
+            else:
+                px = MultivariateNormal_vector_format(invSigmamu = (YmN.view(YmN.shape+(1,1))*self.beta.mean()).sum(-3),invSigma = (Ew.view(Ew.shape+(1,1))*BBT).sum(-3))
+                pgc = ((BBT*px.EXXT().unsqueeze(-3)).sum(-1).sum(-1)).sqrt()  # should have shape (sample x batch x n)
+            Ew = pgb/2.0/pgc*(pgc/2.0).tanh()
+
+        Res = 0.0
+
+        return px.invSigma, px.invSigmamu, Res
+
     def log_predict(self,X):  # slower than predict because some calculations are repeated
         Y = torch.eye(self.n+1).unsqueeze(-2)
         return self.Elog_like(X,Y).transpose(0,-1)
+
+    def loggeomean(self,X):
+        return self.log_predict(X)
 
     def log_predict_2(self,X):
         # This version of the forward method exactly marginalizes out the
@@ -263,52 +291,58 @@ class MultiNomialLogisticRegression():
 
 
 
-print('Test Multinomial Logistic Regression')
-from  matplotlib import pyplot as plt
-from dists import Delta
-#from MultiNomialLogisticRegression import *
-n=4
-p=10
-num_samples = 1000
-W = 4*torch.randn(n,p)/np.sqrt(p)
-X = torch.randn(num_samples,p)
-B = torch.randn(n).sort()[0]/2
+# print('Test Multinomial Logistic Regression')
+# from  matplotlib import pyplot as plt
+# from dists import Delta
+# #from MultiNomialLogisticRegression import *
+# n=4
+# p=10
+# num_samples = 200
+# W = 4*torch.randn(n,p)/np.sqrt(p)
+# W[-1,:]=0
+# X = torch.randn(num_samples,p)
+# B = torch.randn(n).sort()[0]/2*0
 
 
-logpY = X@W.transpose(-2,-1)+B
-pY = (logpY - logpY.logsumexp(-1,True)).exp()
+# logpY = X@W.transpose(-2,-1)+B
+# pY = (logpY - logpY.logsumexp(-1,True)).exp()
 
-Y = torch.distributions.OneHotCategorical(logits = logpY).sample()
+# Y = torch.distributions.OneHotCategorical(logits = logpY).sample()
 
-model = MultiNomialLogisticRegression(n,p,pad_X=True)
+# model = MultiNomialLogisticRegression(n,p,batch_shape=(),pad_X=True)
 
-model.raw_update(X,Y,iters =20,verbose=True)
-#model.update(Delta(X.unsqueeze(-1)),Y,iters =4)
-What = model.beta.mean().squeeze()
+# model.raw_update(X.unsqueeze(-2),Y.unsqueeze(-2),iters =20,verbose=True)
+# #model.raw_update(X.unsqueeze(-2),Y.unsqueeze(-2),iters =20,verbose=True)
+# #model.update(Delta(X.unsqueeze(-1)),Y,iters =4)
+# What = model.beta.mean().squeeze()
 
-print('Predictions by lowerbounding with q(w|b,<psi^2>)')
-psb = model.predict(X)
-for i in range(n):
-    plt.scatter(pY.log()[:,i],psb.log()[:,i])    
-plt.plot([pY.log().min(),0],[pY.log().min(),0])
-plt.show()
+# print('Predictions by lowerbounding with q(w|b,<psi^2>)')
+# psb = model.predict(X)
 # for i in range(n):
-#     plt.scatter(pY[:,i],psb[:,i])    
-# plt.plot([0,1],[0,1])
+#     plt.scatter(pY.log()[:,i],psb.log()[:,i])    
+# plt.plot([pY.log().min(),0],[pY.log().min(),0])
 # plt.show()
+# # for i in range(n):
+# #     plt.scatter(pY[:,i],psb[:,i])    
+# # plt.plot([0,1],[0,1])
+# # plt.show()
 
-print('Predictions by marginaling out q(beta) with w = <w|b,<psi^2>>')
-psb2 = model.predict_2(X)
-for i in range(n):
-    plt.scatter(pY.log()[:,i],psb2.log()[:,i])    
-plt.plot([pY.log().min(),0],[pY.log().min(),0])
-plt.show()
-psb2 = model.predict(X)
+# print('Predictions by marginaling out q(beta) with w = <w|b,<psi^2>>')
+# psb2 = model.predict_2(X)
 # for i in range(n):
-#     plt.scatter(pY[:,i],psb2[:,i])    
-# plt.plot([0,1],[0,1])
+#     plt.scatter(pY.log()[:,i],psb2.log()[:,i])    
+# plt.plot([pY.log().min(),0],[pY.log().min(),0])
 # plt.show()
-print('Percent Correct   = ',((Y.argmax(-1)==psb.argmax(-1)).sum()/Y.shape[0]).data*100)
-print('Percent Correct_2 = ',((Y.argmax(-1)==psb2.argmax(-1)).sum()/Y.shape[0]).data*100)
+# psb2 = model.predict(X)
+# # for i in range(n):
+# #     plt.scatter(pY[:,i],psb2[:,i])    
+# # plt.plot([0,1],[0,1])
+# # plt.show()
+# print('Percent Correct   = ',((Y.argmax(-1)==psb.argmax(-1)).sum()/Y.shape[0]).data*100)
+# print('Percent Correct_2 = ',((Y.argmax(-1)==psb2.argmax(-1)).sum()/Y.shape[0]).data*100)
 
+# for i in range(n-1):
+#     plt.errorbar(W[i,:],model.beta.mean().squeeze(-1)[i,:-1],yerr=2*model.beta.ESigma().diagonal(dim1=-2,dim2=-1)[i,:-1].sqrt(),fmt='o',linestyle='None')
+# plt.plot([W.min(),W.max()],[W.min(),W.max()])
+# plt.show()
 

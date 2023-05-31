@@ -22,9 +22,10 @@ class ARHMM(HMM):
 
     def Elog_like_X_given_Y(self,Y):
         invSigma_x_x, invSigmamu_x, Residual = self.obs_dist.Elog_like_X_given_Y(Y)
-        invSigma_x_x = (invSigma_x_x*self.p.unsqueeze(-1).unsqueeze(-2)).sum(-3)
-        invSigmamu_x = (invSigmamu_x*self.p.unsqueeze(-1).unsqueeze(-2)).sum(-3)
-        Residual = (Residual*self.p).sum(-1)
+        if self.p is not None:
+            invSigma_x_x = (invSigma_x_x*self.p.unsqueeze(-1).unsqueeze(-2)).sum(-3)
+            invSigmamu_x = (invSigmamu_x*self.p.unsqueeze(-1).unsqueeze(-2)).sum(-3)
+            Residual = (Residual*self.p).sum(-1)
         return invSigma_x_x, invSigmamu_x, Residual
 
 class ARHMM_prXY(HMM):
@@ -40,9 +41,10 @@ class ARHMM_prXY(HMM):
 
     def Elog_like_X_given_pY(self,pY):
         invSigma_x_x, invSigmamu_x, Residual = self.obs_dist.Elog_like_X_given_pY(pY)
-        invSigma_x_x = (invSigma_x_x*self.p.view(self.p.shape + (1,)*2)).sum(-3)
-        invSigmamu_x = (invSigmamu_x*self.p.view(self.p.shape + (1,)*2)).sum(-3)
-        Residual = (Residual*self.p).sum(-1)
+        if self.p is not None:
+            invSigma_x_x = (invSigma_x_x*self.p.view(self.p.shape + (1,)*2)).sum(-3)
+            invSigmamu_x = (invSigmamu_x*self.p.view(self.p.shape + (1,)*2)).sum(-3)
+            Residual = (Residual*self.p).sum(-1)
         return invSigma_x_x, invSigmamu_x, Residual
 
 
@@ -77,9 +79,10 @@ class ARHMM_prXRY(HMM):
         Residual = Residual - 0.5*(invSigma_xr_xr[...,self.p1:,self.p1:]*(pYR[1]*pYR[1].transpose(-2,-1))).sum(-1).sum(-1)
         Residual = Residual + (invSigmamu_xr[...,self.p1:,:]*pYR[1]).sum(-1).sum(-1)
 
-        invSigma_x_x = (invSigma_x_x*self.p.view(self.p.shape + (1,)*2)).sum(-3)
-        invSigmamu_x = (invSigmamu_x*self.p.view(self.p.shape + (1,)*2)).sum(-3)
-        Residual = (Residual*self.p).sum(-1)
+        if self.p is not None:
+            invSigma_x_x = (invSigma_x_x*self.p.view(self.p.shape + (1,)*2)).sum(-3)
+            invSigmamu_x = (invSigmamu_x*self.p.view(self.p.shape + (1,)*2)).sum(-3)
+            Residual = (Residual*self.p).sum(-1)
 
         return invSigma_x_x, invSigmamu_x, Residual
 

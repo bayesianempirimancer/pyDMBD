@@ -17,40 +17,74 @@ class NewtonsCradle():
         if(init_type=='random'):
             theta_0 = torch.rand(self.batch_size,self.n_balls)*2*np.pi- np.pi
             theta_0 = theta_0.sort(-1)[0]
-            theta_0 = theta_0/10.0
+            theta_0 = theta_0/20.0
         if(init_type=='1 ball object'):
-            theta = -np.pi/4*torch.rand(self.batch_size,1)/20-np.pi/4-2*np.pi/20
-            other_thetas = torch.rand(self.batch_size,self.n_balls-1)*2*np.pi/20 - np.pi
-            other_thetas = other_thetas.sort(-1)[0]/20.0
+            theta = 2*np.pi*(torch.rand(self.batch_size,1) - 0.5)/100 - np.pi/2*(torch.rand(self.batch_size,1)+1)/2 
+            other_thetas = 2*np.pi*(torch.rand(self.batch_size,self.n_balls-1)-0.5) 
+            other_thetas = other_thetas.sort(-1)[0]/100.0
             theta_0 = torch.cat((theta,other_thetas),-1)    
         if(init_type=='2 ball object'):
-            theta = -np.pi/4*torch.rand(self.batch_size,1)/20-np.pi/4-2*np.pi/20
-            theta = torch.cat((theta,theta),1)
-            other_thetas = torch.rand(self.batch_size,self.n_balls-2)*2*np.pi/20- np.pi
-            other_thetas = other_thetas.sort(-1)[0]/20.0
+            theta = 2*np.pi*(torch.rand(self.batch_size,2) - 0.5)/100 - np.pi/2*(torch.rand(self.batch_size,1)+1)/2
+            theta = theta.sort(-1)[0]
+            other_thetas = 2*np.pi*(torch.rand(self.batch_size,self.n_balls-2) - 0.5)
+            other_thetas = other_thetas.sort(-1)[0]/100.0
             theta_0 = torch.cat((theta,other_thetas),-1)    
         if(init_type=='3 ball object'):
-            theta = -np.pi/4*torch.rand(self.batch_size,1)/20-np.pi/4-2*np.pi/20
-            theta = torch.cat((theta,theta,theta),1)
-            other_thetas = torch.rand(self.batch_size,self.n_balls-3)*2*np.pi/20- np.pi
-            other_thetas = other_thetas.sort(-1)[0]/20.0
+            theta = 2*np.pi*(torch.rand(self.batch_size,3) - 0.5)/100 - np.pi/2*(torch.rand(self.batch_size,1)+1)/2
+            theta = theta.sort(-1)[0]
+            other_thetas = 2*np.pi*(torch.rand(self.batch_size,self.n_balls-3) - 0.5)
+            other_thetas = other_thetas.sort(-1)[0]/100.0
             theta_0 = torch.cat((theta,other_thetas),-1)    
         if(init_type=='4 ball object'):
-            theta = -np.pi/4*torch.rand(self.batch_size,1)/20-np.pi/4-2*np.pi/20
-            theta = torch.cat((theta,theta,theta,theta),1)
-            other_thetas = torch.rand(self.batch_size,self.n_balls-4)*2*np.pi/20- np.pi
-            other_thetas = other_thetas.sort(-1)[0]/20.0
+            theta = 2*np.pi*(torch.rand(self.batch_size,4) - 0.5)/100 - np.pi/2*(torch.rand(self.batch_size,1)+1)/2
+            theta = theta.sort(-1)[0]
+            other_thetas = 2*np.pi*(torch.rand(self.batch_size,self.n_balls-4) - 0.5)
+            other_thetas = other_thetas.sort(-1)[0]/100.0
             theta_0 = torch.cat((theta,other_thetas),-1)    
-        if(init_type == '2 + 2 ball object'):
-            theta = -np.pi/4*torch.rand(self.batch_size,2)/20-np.pi/4-2*np.pi/20
-            theta = theta.sort(-1)[0]/20.0
-            other_thetas = +np.pi/4*torch.rand(self.batch_size,2)/20+np.pi/4+2*np.pi/20
-            other_thetas = other_thetas.sort(-1)[0]/20.0
-            theta_0 = torch.cat((theta,torch.zeros(self.batch_size,1),other_thetas),-1)    
+
         if(init_type == '1 + 1 ball object'):
-            theta = -np.pi/4*torch.rand(self.batch_size,1)/20-np.pi/4-2*np.pi/20
-            other_thetas = +np.pi/4*torch.rand(self.batch_size,1)/20+np.pi/4+2*np.pi/20
-            theta_0 = torch.cat((theta,torch.zeros(self.batch_size,3),other_thetas),-1)    
+            thetaL = 2*np.pi*(torch.rand(self.batch_size,1) - 0.5)/100 - np.pi/2*(torch.rand(self.batch_size,1)+1)/2 
+            thetaR = 2*np.pi*(torch.rand(self.batch_size,1) - 0.5)/100 + np.pi/2*(torch.rand(self.batch_size,1)+1)/2 
+            thetaL = thetaL.sort(-1)[0]
+            thetaR = thetaR.sort(-1)[0]
+            other_thetas = 2*np.pi*(torch.rand(self.batch_size,self.n_balls-2) - 0.5)
+            other_thetas = other_thetas.sort(-1)[0]/100.0
+            theta_0 = torch.cat((thetaL,other_thetas,thetaR),-1)    
+
+        if(init_type == '1 + 2 ball object'):
+            thetaL = 2*np.pi*(torch.rand(self.batch_size,1) - 0.5)/100 - np.pi/2*(torch.rand(self.batch_size,1)+1)/2 
+            thetaR = 2*np.pi*(torch.rand(self.batch_size,2) - 0.5)/100 + np.pi/2*(torch.rand(self.batch_size,1)+1)/2 
+            thetaL = thetaL.sort(-1)[0]
+            thetaR = thetaR.sort(-1)[0]
+            other_thetas = 2*np.pi*(torch.rand(self.batch_size,self.n_balls-3) - 0.5)
+            other_thetas = other_thetas.sort(-1)[0]/100.0
+            theta_0 = torch.cat((thetaL,other_thetas,thetaR),-1)    
+
+        if(init_type == '1 + 3 ball object'):
+            thetaL = 2*np.pi*(torch.rand(self.batch_size,1) - 0.5)/100 - np.pi/2*(torch.rand(self.batch_size,1)+1)/2 
+            thetaR = 2*np.pi*(torch.rand(self.batch_size,3) - 0.5)/100 + np.pi/2*(torch.rand(self.batch_size,1)+1)/2 
+            thetaL = thetaL.sort(-1)[0]
+            thetaR = thetaR.sort(-1)[0]
+            other_thetas = 2*np.pi*(torch.rand(self.batch_size,self.n_balls-4) - 0.5)
+            other_thetas = other_thetas.sort(-1)[0]/100.0
+            theta_0 = torch.cat((thetaL,other_thetas,thetaR),-1)    
+
+        if(init_type == '2 + 3 ball object'):
+            thetaL = 2*np.pi*(torch.rand(self.batch_size,2) - 0.5)/100 - np.pi/2*(torch.rand(self.batch_size,1)+1)/2 
+            thetaR = 2*np.pi*(torch.rand(self.batch_size,3) - 0.5)/100 + np.pi/2*(torch.rand(self.batch_size,1)+1)/2 
+            thetaL = thetaL.sort(-1)[0]
+            thetaR = thetaR.sort(-1)[0]
+            theta_0 = torch.cat((thetaL,thetaR),-1)    
+
+        if(init_type == '2 + 2 ball object'):
+            thetaL = 2*np.pi*(torch.rand(self.batch_size,2) - 0.5)/100 - np.pi/2*(torch.rand(self.batch_size,1)+1)/2 
+            thetaR = 2*np.pi*(torch.rand(self.batch_size,2) - 0.5)/100 + np.pi/2*(torch.rand(self.batch_size,1)+1)/2 
+            thetaL = thetaL.sort(-1)[0]
+            thetaR = thetaR.sort(-1)[0]
+            other_thetas = 2*np.pi*(torch.rand(self.batch_size,self.n_balls-4) - 0.5)
+            other_thetas = other_thetas.sort(-1)[0]/100.0
+            theta_0 = torch.cat((thetaL,other_thetas,thetaR),-1)    
+
         return theta_0
 
     def generate_data(self,init_type='random'):
@@ -76,6 +110,7 @@ class NewtonsCradle():
                 theta[t,:,k-1] = theta[t-1,:,k-1] + self.dt*v_theta[t,:,k-1]
                 theta[t,:,k] = theta[t-1,:,k] + self.dt*v_theta[t,:,k]
 
+            theta[t],idx=theta[t].sort(-1)
             # for k in range(self.n_balls-1,0,-1):
             #     dist = (X[:,k]-X[:,k-1])**2 + (Y[:,k]-Y[:,k-1])**2
             #     hit[:,k] = (dist < self.ball_size**2).float()

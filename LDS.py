@@ -164,12 +164,8 @@ class LinearDynamicalSystems():
             
         self.SE_x0_x0 = 0.5*(self.SE_x0_x0 + self.SE_x0_x0.transpose(-1,-2))
         self.SE_xpu_xpu = 0.5*(self.SE_xpu_xpu + self.SE_xpu_xpu.transpose(-1,-2))
-        if self.latent_noise != 'shared':
-            self.SE_x_x = (self.SE_x_x*torch.eye(self.SE_x_x.shape[-1],requires_grad=False)).sum(-1)
-        else:
-            self.SE_x_x = 0.5*(self.SE_x_x + self.SE_x_x.transpose(-1,-2))
+        self.SE_x_x = 0.5*(self.SE_x_x + self.SE_x_x.transpose(-1,-2))
         self.SE_xr_xr = 0.5*(self.SE_xr_xr + self.SE_xr_xr.transpose(-1,-2))
-        self.SE_y_y = 0.5*(self.SE_y_y + self.SE_y_y.transpose(-1,-2))
 
         self.x0.ss_update(self.SE_x0_x0,self.SE_x0.squeeze(-1),self.N,lr)
         self.A.ss_update(self.SE_xpu_xpu,self.SE_x_xpu,self.SE_x_x,self.T,lr)
@@ -189,7 +185,7 @@ class LinearDynamicalSystems():
         if self.px is None:
             self.px = MultivariateNormal_vector_format(mu = torch.zeros(y.shape[:-2]+(self.hidden_dim,1),requires_grad=False))
 
-        self.px.invSigma, self.px.invSigmamu, self.px.Sigma, self.px.mu, Sigma_t_tp1, Sigma_x0_x0, mu_x0, logZ, logZ_b = self.forward_backward_loop(y,u,r)  # updates and stores self.px
+        self.px.invSigma, self.px.invSigmamu, self.px.Sigma, self.px.mu, Sigma_t_tp1, Sigma_x0_x0, SE_x0, logZ, logZ_b = self.forward_backward_loop(y,u,r)  # updates and stores self.px
 
 #         invSigma, invSigmamu, Sigma, mu, Sigma_t_tp1, Sigma_x0_x0, mu_x0, logZ, logZ_b = self.forward_backward_loop(y,u,r)  # updates and stores self.px
         # if self.px is None:
@@ -201,18 +197,17 @@ class LinearDynamicalSystems():
         #     self.px.invSigmamu = invSigmamu
 
         # compute sufficient statistics $ note that these sufficient statistics are only integrated over time
-        SE_x0_x0 = ((Sigma_x0_x0 + mu_x0 @ mu_x0.transpose(-2,-1)))
-        SE_x0 = mu_x0
+        SE_x0_x0 = ((Sigma_x0_x0 + SE_x0 @ SE_x0.transpose(-2,-1)))
 
         SE_x_x = ((self.px.mu@self.px.mu.transpose(-1,-2)+self.px.Sigma)).sum(0)
-        SE_xp_xp = SE_x_x - (self.px.mu[-1]@self.px.mu.transpose(-1,-2)[-1] - self.px.Sigma[-1])
+        SE_xp_xp = SE_x_x - (self.px.mu[-1]@self.px.mu.transpose(-1,-2)[-1] + self.px.Sigma[-1])
         SE_xp_xp = SE_xp_xp + SE_x0_x0
 
         SE_x_u = ((self.px.mu@u.transpose(-2,-1))).sum(0)
-        SE_xp_u = ((self.px.mu[:-1] @ u[1:].transpose(-1,-2))).sum(0) + mu_x0 @ u[0].transpose(-2,-1)
+        SE_xp_u = ((self.px.mu[:-1] @ u[1:].transpose(-1,-2))).sum(0) + SE_x0 @ u[0].transpose(-2,-1)
 
         SE_xp_x = ((self.px.mu[:-1] @ self.px.mu[1:].transpose(-2,-1))).sum(0)  + (Sigma_t_tp1[:-1]).sum(0) #Sigma_0m1_0 now in last entry of fbw_Sigma_t_tp1
-        SE_xp_x = SE_xp_x + mu_x0 @ self.px.mu[0].transpose(-2,-1) + Sigma_t_tp1[-1]
+        SE_xp_x = SE_xp_x + SE_x0 @ self.px.mu[0].transpose(-2,-1) + Sigma_t_tp1[-1]
 
         SE_x_r =  ((self.px.mu@r.transpose(-2,-1))).sum(0)
         SE_x_y = ((self.px.mu@y.transpose(-2,-1))).sum(0)
@@ -404,9 +399,8 @@ class LinearDynamicalSystems():
 
         Sigma_t_tp1[-1] = Sigma_t_tp1[-1] @ self.QA_xp_x.transpose(-2,-1) @ (invGamma + invSigma_like[0] + self.invQ - self.QA_xp_x@Sigma_t_tp1[-1]*self.QA_xp_x.transpose(-2,-1)).inverse()#uses invSigma from tp1 which we probably should have stored 
         invGamma, invGammamu = self.backward_step(invGamma, invGammamu, invSigma_like[0], invSigmamu_like[0],u[0])
-#        invGamma, invGammamu, Residual, logZ_b[-1] = self.backward_step_with_Residual(invGamma, invGammamu, Residual, invSigma_like[0], invSigmamu_like[0],Residual_like[0],u[0])
-        invSigma_x0_x0 = (invGamma+self.x0.EinvSigma())
-        Sigma_x0_x0 = (invSigma_x0_x0).inverse()   # posterior parameters for t
+        invGamma, invGammamu, Residual, logZ_b[-1] = self.backward_step_with_Residual(invGamma, invGammamu, Residual, invSigma_like[0], invSigmamu_like[0],Residual_like[0],u[0])
+        Sigma_x0_x0 = (invGamma+self.x0.EinvSigma()).inverse()   # posterior parameters for t
         mu_x0 = Sigma_x0_x0 @ (invGammamu + self.x0.EinvSigmamu().unsqueeze(-1))
 
         return invSigma, invSigmamu, Sigma, mu, Sigma_t_tp1, Sigma_x0_x0, mu_x0, logZ, logZ_b

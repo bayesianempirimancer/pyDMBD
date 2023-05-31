@@ -515,10 +515,7 @@ import numpy as np
 from  matplotlib import pyplot as plt
 from dists import Delta
 from MultiNomialLogisticRegression import *
-print('Test Multinomial Logistic Regression')
-from  matplotlib import pyplot as plt
-from dists import Delta
-#from MultiNomialLogisticRegression import *
+
 n=4
 p=10
 num_samples = 600

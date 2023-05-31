@@ -36,6 +36,24 @@ class HMM():
         self.batch_shape = self.batch_shape[:-n]        
         return self
 
+    def stable_logsumexp(self,x,dim=None,keepdim=False):
+        if isinstance(dim,int):
+            xmax = x.max(dim=dim,keepdim=True)[0]
+            if(keepdim):
+                return xmax + (x-xmax).exp().sum(dim=dim,keepdim=keepdim).log()
+            else:
+                return xmax.squeeze(dim) + (x-xmax).exp().sum(dim=dim,keepdim=keepdim).log()
+        else:
+            xmax = x
+            for d in dim:
+                xmax = xmax.max(dim=d,keepdim=True)[0]
+            if(keepdim):
+                return xmax + (x-xmax).exp().sum(dim=dim,keepdim=keepdim).log()
+            else:
+                for d in dim:
+                    xmax = xmax.squeeze(d)
+                return xmax + (x-xmax).exp().sum(dim=dim,keepdim=keepdim).log()
+
     def logmatmulexp(self,x,y):
 
         x_shift = x.max(-1, keepdim=True)[0]
@@ -44,10 +62,10 @@ class HMM():
         return xy + x_shift + y_shift
 
     def forward_step(self,logits,observation_logits):
-        return (logits.unsqueeze(-1) + observation_logits.unsqueeze(-2) + self.transition.loggeomean()).logsumexp(-2)
+        return (logits.unsqueeze(-1) + observation_logits.unsqueeze(-2) + self.transition.loggeomean()).stable_logsumexp(-2)
     
     def backward_step(self,logits,observation_logits):
-        return (logits.unsqueeze(-2) + observation_logits.unsqueeze(-2) + self.transition.loggeomean()).logsumexp(-1)
+        return (logits.unsqueeze(-2) + observation_logits.unsqueeze(-2) + self.transition.loggeomean()).stable_logsumexp(-1)
 
     def forward_backward_logits(self,fw_logits):
         # Assumes that time is in the first dimension of the observation
@@ -59,30 +77,30 @@ class HMM():
 #        fw_logits = torch.zeros(observation_logits.shape,requires_grad=False)
 #        fw_logits[0] = (logits[0] + self.initial.loggeomean().unsqueeze(-1)).logsumexp(-2)
 
-        fw_logits[0] = (fw_logits[0].unsqueeze(-2) + self.initial.loggeomean().unsqueeze(-1)).logsumexp(-2)
+        fw_logits[0] = self.stable_logsumexp(fw_logits[0].unsqueeze(-2) + self.initial.loggeomean().unsqueeze(-1),-2)
 
         for t in range(1,T):
 #            fw_logits[t] = (fw_logits[t-1].unsqueeze(-1) + logits[t]).logsumexp(-2)
-            fw_logits[t] = (fw_logits[t-1].unsqueeze(-1) + fw_logits[t].unsqueeze(-2) + self.transition.loggeomean()).logsumexp(-2)
-        logZ = fw_logits[-1].logsumexp(-1,True)
+            fw_logits[t] = self.stable_logsumexp(fw_logits[t-1].unsqueeze(-1) + fw_logits[t].unsqueeze(-2) + self.transition.loggeomean(),-2)
+        logZ = self.stable_logsumexp(fw_logits[-1],-1,True)
         fw_logits = fw_logits - logZ
         logZ = logZ.squeeze(-1)
         SEzz = torch.zeros(fw_logits.shape[1:]+(self.hidden_dim,),requires_grad=False)
         for t in range(T-2,-1,-1):
             ### Backward Smoothing
             temp = fw_logits[t].unsqueeze(-1) + self.transition.loggeomean() 
-            xi_logits = (temp - temp.logsumexp(-2,keepdim=True)) + fw_logits[t+1].unsqueeze(-2)
-            fw_logits[t] = xi_logits.logsumexp(-1)
-            xi_logits = (xi_logits - xi_logits.logsumexp([-1,-2], keepdim=True))
+            xi_logits = (temp - self.stable_logsumexp(temp,-2,keepdim=True)) + fw_logits[t+1].unsqueeze(-2)
+            fw_logits[t] = self.stable_logsumexp(xi_logits,-1)
+            xi_logits = (xi_logits - self.stable_logsumexp(xi_logits,(-1,-2), keepdim=True))
             SEzz = SEzz + xi_logits.exp()
                         
         # Now do the initial step
         # Backward Smoothing
         temp = self.initial.loggeomean().unsqueeze(-1) + self.transition.loggeomean() 
-        xi_logits = (temp - temp.logsumexp(-2,keepdim=True)) + fw_logits[0].unsqueeze(-2)
-        SEz0 = xi_logits.logsumexp(-1)
-        SEz0 = (SEz0-SEz0.logsumexp(-1,True)).exp()
-        xi_logits = (xi_logits - xi_logits.logsumexp([-1,-2], keepdim=True))
+        xi_logits = (temp - self.stable_logsumexp(temp,-2,keepdim=True)) + fw_logits[0].unsqueeze(-2)
+        SEz0 = self.stable_logsumexp(xi_logits,-1)
+        SEz0 = (SEz0-self.stable_logsumexp(SEz0,-1,True)).exp()
+        xi_logits = (xi_logits - self.stable_logsumexp(xi_logits,(-1,-2), keepdim=True))
         SEzz = SEzz + xi_logits.exp()
         # Backward inference
         # bw_logits = bw_logits.unsqueeze(-2) + logits[0]  
