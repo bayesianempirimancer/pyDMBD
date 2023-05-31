@@ -49,13 +49,13 @@ class MatrixNormalWishart():
 
         if mask is not None:
             if pad_X:
-                self.mask = torch.cat((self.mask,torch.ones(self.mask.shape[:-1]+(1,),requires_grad=False)>0),dim=-1)
+                self.mask = torch.cat((mask,torch.ones(mask.shape[:-1]+(1,),requires_grad=False)>0),dim=-1)
             self.mu_0 = self.mu_0*self.mask
             self.mu = self.mu*self.mask
         if X_mask is not None:
             if pad_X:
-                self.X_mask = torch.cat((self.X_mask,torch.ones(self.X_mask.shape[:-1]+(1,),requires_grad=False)>0),dim=-1)
-            self.V_0 = self.V_0*((torch.eye(self.p,requires_grad=False)>0)+self.X_mask.unsqueeze(-1)*self.X_mask.unsqueeze(-2))
+                self.X_mask = torch.cat((X_mask,torch.ones(X_mask.shape[:-1]+(1,),requires_grad=False)>0),dim=-1)
+            self.V_0 = self.V_0*((torch.eye(self.p,requires_grad=False)>0)+X_mask.unsqueeze(-1)*X_mask.unsqueeze(-2))
 
         self.invV_0 = V_0.inverse()
         self.V = self.V_0
@@ -81,8 +81,8 @@ class MatrixNormalWishart():
             SEyx = SEyx*self.X_mask.unsqueeze(-2)
         invV = self.invV_0 + SExx
         muinvV = self.mu_0@self.invV_0 + SEyx
-        mu = torch.linalg.solve(invV,muinvV.transpose(-2,-1)).transpose(-2,-1)
-#        mu = muinvV @ invV.inverse()
+#        mu = torch.linalg.solve(invV,muinvV.transpose(-2,-1)).transpose(-2,-1)
+        mu = muinvV @ invV.inverse()
 
         SEyy = SEyy - mu@invV@mu.transpose(-2,-1) + self.mu_0@self.invV_0@self.mu_0.transpose(-2,-1)
         self.invU.ss_update(SEyy,n,lr)
@@ -92,6 +92,7 @@ class MatrixNormalWishart():
         if(self.mask is not None):
             self.mu = self.mu*self.mask
 
+        self.invV = 0.5*(self.invV + self.invV.transpose(-2,-1))
         self.invV_d, self.invV_v = torch.linalg.eigh(self.invV) 
         self.V = self.invV_v@(1.0/self.invV_d.unsqueeze(-1)*self.invV_v.transpose(-2,-1))
         self.logdetinvV = self.invV_d.log().sum(-1)
@@ -212,6 +213,39 @@ class MatrixNormalWishart():
             out = out.sum(-1)
         return out
 
+    def forward(self,pX):
+        if self.pad_X:
+            invSigma_y_y = self.EinvSigma()
+            invSigma_y_x = -self.EinvUX()[...,:,:-1]
+            invSigma_x_x = self.EXTinvUX()[...,:-1,:-1] + pX.EinvSigma()
+            Sigma_y_y, invSigma_y_ySigma_y_x = matrix_utils.block_matrix_inverse(invSigma_y_y, invSigma_y_x, invSigma_y_x.transpose(-2,-1), invSigma_x_x, block_form = 'left')[0:2]
+            invSigmamu_y = self.EinvUX()[...,:,-1:] + invSigma_y_ySigma_y_x@pX.EinvSigmamu()
+            mu_y = Sigma_y_y@invSigmamu_y 
+        else:    
+            invSigma_y_y = self.EinvSigma()
+            invSigma_y_x = -self.EinvUX()
+            invSigma_x_x = self.EXTinvUX() + pX.EinvSigma()
+            Sigma_y_y, invSigma_y_ySigma_y_x = matrix_utils.block_matrix_inverse(invSigma_y_y, invSigma_y_x, invSigma_y_x.transpose(-2,-1), invSigma_x_x, block_form = 'left')[0:2]
+            invSigmamu_y = invSigma_y_ySigma_y_x@pX.EinvSigmamu()
+            mu_y = Sigma_y_y@invSigmamu_y 
+
+        pY = MultivariateNormal_vector_format(Sigma = Sigma_y_y, mu = mu_y, invSigmamu = invSigmamu_y)
+        return pY
+        
+    def backward(self,pY):
+        if self.pad_X:
+            invSigma_x_x = self.EXTinvUX()[...,:-1,:-1]
+            invSigmamu_x = self.EXTinvU()[...,:-1,:]@pY.mean() - self.EXTinvUX()[...,:-1,-1:]
+            Residual = -0.5*(pY.EXXT()*self.EinvSigma()).sum(-1).sum(-1) - 0.5*self.n*np.log(2.0*np.pi) + 0.5*self.ElogdetinvSigma()
+            Residual = Residual - 0.5*self.EXTinvUX()[...,-1,-1]
+        else:
+            invSigma_x_x = self.EXTinvUX()
+            invSigmamu_x = self.EXTinvU()@pY.mean()
+            Residual = -0.5*(pY.EXXT()*self.EinvSigma()).sum(-1).sum(-1) - 0.5*self.n*np.log(2.0*np.pi) + 0.5*self.ElogdetinvSigma()
+    
+        px = MultivariateNormal_vector_format(invSigma=invSigma_x_x, invSigmamu = invSigmamu_x)
+        return px, Residual - px.Res()
+
     def Elog_like_given_pX_pY(self,pX,pY):  # This assumes that X is a distribution with the ability to produce 
                                        # expectations of the form EXXT, and EX with dimensions matching Y, i.e. EX.shape[-2:] is (p,1)
 
@@ -225,9 +259,9 @@ class MatrixNormalWishart():
             EXXT = pX.EXXT()
 
         out = -0.5*(pY.EXXT()*self.EinvSigma()).sum(-1).sum(-1)
-        out +=  (pY.mean().transpose(-2,-1)@self.EinvUX()@EX).squeeze(-1).squeeze(-1)
-        out +=  -0.5*(EXXT*self.EXTinvUX()).sum(-1).sum(-1)
-        out +=  -0.5*self.n*np.log(2.0*np.pi) + 0.5*self.invU.ElogdetinvSigma()
+        out = out + (pY.mean().transpose(-2,-1)@self.EinvUX()@EX).squeeze(-1).squeeze(-1)
+        out = out + -0.5*(EXXT*self.EXTinvUX()).sum(-1).sum(-1)
+        out = out + -0.5*self.n*np.log(2.0*np.pi) + 0.5*self.invU.ElogdetinvSigma()
 
         return out
 
@@ -255,16 +289,6 @@ class MatrixNormalWishart():
                 invSigmamu_x = self.EXTinvU()@pY.mean()
                 Residual = -0.5*(pY.EXXT()*self.EinvSigma()).sum(-1).sum(-1) - 0.5*self.n*np.log(2.0*np.pi) + 0.5*self.ElogdetinvSigma()
             return invSigma_x_x, invSigmamu_x, Residual
-
-    def forward(self,X_post,Y_like=None):
-        # The idea here is to compute p(y|x_obs,y_obs) = p(obs|y)p(y|x)p(x|obs)
-        # Y_like is the gaussian likelihood of p(obs|y)
-        # X_post is the guassian posterior of p(x|obs)
-        pass
-
-    def backward(self,Y_like):
-        # The idea here is to compute p(y_obs|x) = p(obs|y)p(y|x)
-        return self.Elog_like_X_given_pY(Y_like)
 
     def predict(self,X):
 

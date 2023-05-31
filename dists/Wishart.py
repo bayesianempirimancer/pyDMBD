@@ -18,7 +18,7 @@ class Wishart():
 
         self.d, self.v = torch.linalg.eigh(U)
         self.d = 1.0/self.d
-        self.invU_0 = self.invU
+        self.invU_0 = self.v@(self.d.unsqueeze(-1)*self.v.transpose(-2,-1))
         self.logdet_invU_0 = self.d.log().sum(-1)
         self.nu_0 = nu
         self.nu = self.nu_0
@@ -53,11 +53,11 @@ class Wishart():
     def ss_update(self,SExx,n,lr=1.0):
         invU = (self.invU_0 + SExx)*lr + (1-lr)*self.invU
         self.nu = (self.nu_0 + n)*lr + (1-lr)*self.nu
-        self.d, self.v = torch.linalg.eigh(invU)  # recall v@d@v.transpose(-2,-1) = invU 
+        self.d, self.v = torch.linalg.eigh(0.5*invU+0.5*invU.transpose(-2,-1))  # recall v@d@v.transpose(-2,-1) = invU 
 
     def nat_update(self,nu,invU):
         self.nu = nu
-        self.d, self.v = torch.linalg.eigh(invU)  # recall v@d@v.transpose(-2,-1) = invU 
+        self.d, self.v = torch.linalg.eigh(0.5*invU+0.5*invU.transpose(-2,-1))  # recall v@d@v.transpose(-2,-1) = invU 
    
     def mean(self):
         return self.U*self.nu.unsqueeze(-1).unsqueeze(-1)

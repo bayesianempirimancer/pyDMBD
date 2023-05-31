@@ -1,14 +1,14 @@
 
 class ConjugatePrior():
     def __init__(self):
-        self.event_dim_0 = None # smallest possible event dimension
-        self.event_dim = None
-        self.event_shape = None
-        self.batch_dim = None
-        self.batch_shape = None
-        self.nat_dim = None
-        self.nat_parms_0 = None
-        self.nat_parms = None
+        self.event_dim_0 = 0 # smallest possible event dimension
+        self.event_dim = 0
+        self.event_shape = ()
+        self.batch_dim = 0
+        self.batch_shape = ()
+        self.nat_dim = 0
+        self.nat_parms_0 = 0
+        self.nat_parms = 0
 
     def to_event(self,n):
         if n < 1:

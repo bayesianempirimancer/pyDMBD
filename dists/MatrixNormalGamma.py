@@ -76,23 +76,25 @@ class MatrixNormalGamma():
         return self
 
     def ss_update(self,SExx,SEyx,SEyy,n,lr=1.0):
-        # Assumes that SEyy is batch x event - 1
+        # Assumes that SEyy is batch x event x event
         if self.X_mask is not None:
             SExx = SExx*self.X_mask.unsqueeze(-1)*self.X_mask.unsqueeze(-2)
             SEyx = SEyx*self.X_mask.unsqueeze(-2)
         invV = self.invV_0 + SExx
         muinvV = self.mu_0@self.invV_0 + SEyx
         mu = torch.linalg.solve(invV,muinvV.transpose(-2,-1)).transpose(-2,-1)
+#        mu = (muinvV@invV.inverse()).transpose(-2,-1)
 
-        SEyy = SEyy - (mu@invV@mu.transpose(-2,-1)).diagonal(dim1=-2,dim2=-1)
-        SEyy = SEyy + (self.mu_0@self.invV_0@self.mu_0.transpose(-2,-1)).diagonal(dim1=-1,dim2=-2)
+        SEyy = SEyy - (mu@invV@mu.transpose(-2,-1))
+        SEyy = SEyy + (self.mu_0@self.invV_0@self.mu_0.transpose(-2,-1))
 
         self.invV = (invV-self.invV)*lr + self.invV
+        self.invV = 0.5*(self.invV + self.invV.transpose(-2,-1))
         self.invV_d, self.invV_v = torch.linalg.eigh(self.invV) 
         self.V = self.invV_v@(1.0/self.invV_d.unsqueeze(-1)*self.invV_v.transpose(-2,-1))
         self.logdetinvV = self.invV_d.log().sum(-1)
 
-        self.invU.ss_update(SEyy,n.unsqueeze(-1),lr)
+        self.invU.ss_update(SEyy.diagonal(dim1=-2,dim2=-1), n.unsqueeze(-1), lr)
         if self.uniform_precision==True:
             self.invU.gamma.alpha = self.invU.gamma.alpha.sum(-1,keepdim=True)  # THIS IS A HACK
         self.mu = (mu-self.mu)*lr + self.mu
@@ -104,7 +106,7 @@ class MatrixNormalGamma():
         if p is None:
             sample_shape = pX.shape[:-self.event_dim-self.batch_dim]
             SExx = pX.EXXT()
-            SEyy = pY.EXX()
+            SEyy = pY.EXXT()
             SEyx = pY.EX()@pX.EX().transpose(-2,-1)
             n = torch.tensor(np.prod(sample_shape),requires_grad=False)
 
@@ -126,13 +128,12 @@ class MatrixNormalGamma():
                 SEyx = torch.cat((SEyx,SEy),dim=-1)
 
             n = n.expand(self.batch_shape + self.event_shape[:-2])
-            self.ss_update(SExx,SEyx,SEyy.squeeze(-1),n,lr)
+            self.ss_update(SExx,SEyx,SEyy,n,lr)
             
         else:
-            for i in range(self.event_dim):
-                p=p.unsqueeze(-1)
+            p=p.view(p.shape+self.event_dim*(1,))
             SExx = pX.EXXT()*p
-            SEyy = pY.EXX()*p
+            SEyy = pY.EXXT()*p
             SEyx = pY.EX()@pX.EX().transpose(-2,-1)*p
             if self.pad_X:
                 SEx = pX.EX()*p
@@ -152,7 +153,7 @@ class MatrixNormalGamma():
                 SEx = torch.cat((SEx,p),dim=-2)
                 SExx = torch.cat((SExx,SEx.transpose(-2,-1)),dim=-2)
                 SEyx = torch.cat((SEyx,SEy),dim=-1)
-            self.ss_update(SExx,SEyx,SEyy.squeeze(-1),p.squeeze(-1).squeeze(-1),lr)
+            self.ss_update(SExx,SEyx,SEyy,p.view(p.shape[:-2]),lr)
     
 
     def raw_update(self,X,Y,p=None,lr=1.0):
@@ -164,7 +165,7 @@ class MatrixNormalGamma():
         if p is None: 
             sample_shape = X.shape[:-self.event_dim-self.batch_dim+1]
             SExx = X@X.transpose(-2,-1)
-            SEyy = (Y*Y).squeeze(-1)
+            SEyy = Y@Y.transpose(-2,-1)
             SEyx = Y@X.transpose(-2,-1)
             n = torch.tensor(np.prod(sample_shape),requires_grad=False)
             n = n.expand(self.batch_shape + self.event_shape[:-2])
@@ -176,17 +177,18 @@ class MatrixNormalGamma():
             self.ss_update(SExx,SEyx,SEyy,n,lr)
             
         else:
+            p = p.view(p.shape+self.event_dim*(1,))
             for i in range(self.event_dim):
                 p=p.unsqueeze(-1)
             SExx = SExx = X@X.transpose(-2,-1)*p
-            SEyy = (Y*Y).squeeze(-1)*p.squeeze(-1)
+            SEyy = Y@Y.transpose(-2,-1)*p
             SEyx = Y@X.transpose(-2,-1)*p
             while SExx.ndim > self.event_dim + self.batch_dim:
                 SExx = SExx.sum(0)
                 SEyy = SEyy.sum(0)
                 SEyx = SEyx.sum(0)
                 p=p.sum(0)
-            self.ss_update(SExx,SEyx,SEyy,p.squeeze(-1).squeeze(-1),lr)
+            self.ss_update(SExx,SEyx,SEyy,p.view(p.shape[:-2]),lr)
 
     def KLqprior(self):
 
@@ -227,9 +229,9 @@ class MatrixNormalGamma():
             EXXT = pX.EXXT()
 
         out = -0.5*(pY.EXXT()*self.invU.EinvSigma()).sum(-1).sum(-1)
-        out +=  (pY.mean().transpose(-2,-1)@self.EinvUX()@EX).squeeze(-1).squeeze(-1)
-        out +=  -0.5*(EXXT*self.EXTinvUX()).sum(-1).sum(-1)
-        out +=  -0.5*self.n*np.log(2.0*np.pi) + 0.5*self.invU.ElogdetinvSigma()
+        out = out +  (pY.mean().transpose(-2,-1)@self.EinvUX()@EX).squeeze(-1).squeeze(-1)
+        out = out +  -0.5*(EXXT*self.EXTinvUX()).sum(-1).sum(-1)
+        out = out +  -0.5*self.n*np.log(2.0*np.pi) + 0.5*self.invU.ElogdetinvSigma()
 
         return out
 
