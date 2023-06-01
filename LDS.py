@@ -372,7 +372,7 @@ class LinearDynamicalSystems():
 
         invSigma[-1] = self.x0.EinvSigma() # sample x batch x by hidden_dim by hidden_dim
         invSigmamu[-1] = self.x0.EinvSigmamu().unsqueeze(-1) # sample by batch x by hidden_dim by 1
-        Residual = - (0.5*self.x0.mean()*self.x0.EinvSigmamu()).sum(-1) + 0.5*self.x0.ElogdetinvSigma() - 0.5*np.log(2*np.pi)*self.hidden_dim
+        Residual = - 0.5*self.x0.EXTinvUX() + 0.5*self.x0.ElogdetinvSigma() - 0.5*np.log(2*np.pi)*self.hidden_dim
         Sigma_t_tp1 = torch.zeros(sample_shape + self.batch_shape + self.offset +(self.hidden_dim,self.hidden_dim),requires_grad=False)
             # Note that initially Sigma_t_tp1 is a holding place for SigmaStar_t which is called Sigma_tm1_tm1 in the forward step
         invSigma_like, invSigmamu_like, Residual_like = self.log_likelihood_function(y,r)
