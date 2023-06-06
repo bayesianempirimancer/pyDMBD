@@ -6,6 +6,7 @@ import numpy as np
 from .DiagonalWishart import DiagonalWishart
 from .utils import matrix_utils
 from .MultivariateNormal_vector_format import MultivariateNormal_vector_format
+from .DiagonalWishart import DiagonalWishart_UnitTrace
 
 class MatrixNormalGamma():
     # Conugate prior for linear regression coefficients
@@ -45,7 +46,6 @@ class MatrixNormalGamma():
         self.mask = mask
         self.X_mask = X_mask
         self.mu_0 = mu_0
-        self.V_0 = V_0
         self.mu = torch.randn(mu_0.shape,requires_grad=False)/np.sqrt(self.n*self.p)+mu_0
 
         if mask is not None:
@@ -56,11 +56,11 @@ class MatrixNormalGamma():
         if X_mask is not None:
             if pad_X:
                 self.X_mask = torch.cat((self.X_mask,torch.ones(self.X_mask.shape[:-1]+(1,),requires_grad=False)>0),dim=-1)
-            self.V_0 = self.V_0*((torch.eye(self.p,requires_grad=False)>0)+self.X_mask.unsqueeze(-1)*self.X_mask.unsqueeze(-2))
+            V_0 = V_0*((torch.eye(self.p,requires_grad=False)>0)+self.X_mask.unsqueeze(-1)*self.X_mask.unsqueeze(-2))
         self.invV_0 = V_0.inverse()
-        self.V = self.V_0
+        self.V = V_0
         self.invV = self.invV_0
-        self.invU = DiagonalWishart(2*torch.ones(U_0.shape,requires_grad=False),U_0)
+        self.invU = DiagonalWishart(2*torch.ones(U_0.shape,requires_grad=False),2*U_0)
 
         self.logdetinvV = self.invV.logdet()    
         self.logdetinvV_0=self.invV_0.logdet()    
@@ -83,16 +83,17 @@ class MatrixNormalGamma():
         invV = self.invV_0 + SExx
         muinvV = self.mu_0@self.invV_0 + SEyx
         mu = torch.linalg.solve(invV,muinvV.transpose(-2,-1)).transpose(-2,-1)
-#        mu = (muinvV@invV.inverse()).transpose(-2,-1)
-
-        SEyy = SEyy - (mu@invV@mu.transpose(-2,-1))
+#        mu = (muinvV@invV.inverse())
+        SEyy = SEyy - (muinvV@mu.transpose(-2,-1))
         SEyy = SEyy + (self.mu_0@self.invV_0@self.mu_0.transpose(-2,-1))
 
         self.invV = (invV-self.invV)*lr + self.invV
         self.invV = 0.5*(self.invV + self.invV.transpose(-2,-1))
-        self.invV_d, self.invV_v = torch.linalg.eigh(self.invV) 
-        self.V = self.invV_v@(1.0/self.invV_d.unsqueeze(-1)*self.invV_v.transpose(-2,-1))
-        self.logdetinvV = self.invV_d.log().sum(-1)
+#        self.invV_d, self.invV_v = torch.linalg.eigh(self.invV) 
+#        self.V = self.invV_v@(1.0/self.invV_d.unsqueeze(-1)*self.invV_v.transpose(-2,-1))
+#        self.logdetinvV = self.invV_d.log().sum(-1)
+        self.V = self.invV.inverse()
+        self.logdetinvV = self.invV.logdet()
 
         self.invU.ss_update(SEyy.diagonal(dim1=-2,dim2=-1), n.unsqueeze(-1), lr)
         if self.uniform_precision==True:
@@ -331,35 +332,16 @@ class MatrixNormalGamma():
         return self.invU.mean()
 
 
-# print('TEST VANILLA')
-# dim=3
-# n=2*dim
-# p=5
-# n_samples = 200
-# W = MatrixNormalGamma(torch.zeros(n,p),torch.ones(n),torch.eye(p))
-# w_true = torch.randn(n,p)
-# b_true = torch.randn(n,1)*0
-# X=torch.randn(n_samples,p)
-# Y=torch.zeros(n_samples,n)
-# for i in range(n_samples):
-#     Y[i,:] = X[i:i+1,:]@w_true.transpose(-1,-2) + b_true.transpose(-2,-1) + torch.randn(1)/4.0
-# from matplotlib import pyplot as plt
-# W.raw_update(X.unsqueeze(-1),Y.unsqueeze(-1))
-# Yhat = W.predict(X.unsqueeze(-1))[0].squeeze(-1)
-# plt.scatter(Y,Yhat)
-# plt.show()
+class MatrixNormalGamma_UnitTrace(MatrixNormalGamma):
 
-# print('TEST non-trivial observation shape and padX')
-# dim = 3
-# n=2
-# p=5
-# W2 = MatrixNormalGamma(torch.zeros(dim,n,p),torch.zeros(dim,n)+torch.ones(n),torch.zeros(dim,p,p)+torch.eye(p),pad_X=True)
-# W2.to_event(1)
-# X = X.unsqueeze(-2)
-# Y = Y.reshape(n_samples,dim,n)
-# from matplotlib import pyplot as plt
-# W2.raw_update(X.unsqueeze(-1),Y.unsqueeze(-1))
-# Yhat = W.predict(X.unsqueeze(-1))[0].squeeze(-1)
-# plt.scatter(Y,Yhat)
-# plt.show()
+    def __init__(self,mu_0,U_0=None,V_0=None,mask=None,X_mask=None,pad_X=False):
+        super().__init__(mu_0,U_0=U_0,V_0=V_0,uniform_precision=False,mask=mask,X_mask=X_mask,pad_X=pad_X)
+        alpha = self.invU.gamma.alpha_0
+        beta = self.invU.gamma.beta_0
+        self.invU = DiagonalWishart_UnitTrace(alpha,beta)
+
+#    def ss_update(self,SExx,SEyx,SEyy,n,lr=1.0):
+#        super().ss_update(SExx,SEyx,SEyy,n,lr=lr)
+#        self.mu = self.mu*self.invU.rescale.unsqueeze(-1).sqrt()
+
 

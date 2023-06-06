@@ -27,7 +27,13 @@ class DiagonalWishart():
         return self
 
     def ss_update(self,SExx,n,lr=1.0):
-        self.gamma.ss_update(n/2.0,SExx/2.0,lr)  
+        self.gamma.ss_update(n/2.0,SExx/2.0,lr)
+        # _HACK
+        idx = self.gamma.beta<self.gamma.beta_0
+        if idx.sum()>0:
+            print('DiagonalWishart ss_update hack triggered at %d locations'%idx.sum())
+            self.gamma.alpha[idx] = self.gamma.alpha_0[idx]
+            self.gamma.beta[idx] = self.gamma.beta_0[idx]  
 
     def KLqprior(self):
         return self.gamma.KLqprior()
@@ -56,3 +62,24 @@ class DiagonalWishart():
     def tensor_extract_diag(self,A):
         return A.diagonal(dim=-2,dim1=-1)
         
+class DiagonalWishart_UnitTrace(DiagonalWishart):
+
+    def suminv_d_plus_x(self,x):
+        return (self.gamma.alpha/(self.gamma.beta+x)).sum(-1,True)
+
+    def suminv_d_plus_x_prime(self,x):
+        return -(self.gamma.alpha/(self.gamma.beta+x)**2).sum(-1,True)
+
+    def ss_update(self,SExx,n,lr=1.0,iters=10):
+        super().ss_update(SExx,n,lr=lr)
+#        x=self.gamma.alpha.sum(-1,True)
+        x = torch.zeros(self.gamma.beta.shape[:-1]+(1,),requires_grad=False)
+        for i in range(iters):
+            x = x + (10*self.dim-self.suminv_d_plus_x(x))/self.suminv_d_plus_x_prime(x)
+            idx = x<-self.gamma.beta.min(-1,True)[0]
+            x = x*(~idx) + (-self.gamma.beta.min(-1,True)[0]+1e-4)*idx  # ensure positive definite
+
+        self.rescale =  1+x/self.gamma.beta
+        self.gamma.beta = self.gamma.beta+x
+        
+

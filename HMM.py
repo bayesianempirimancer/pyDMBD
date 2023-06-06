@@ -7,7 +7,7 @@ class HMM():
     # As with the mixture model, the last batch dimension of the observation distribution is the 
     # dimension of the mixture.  Similarly, the observations themselves are assumed to be sample x obs_batch_shape[:-1] x (1,) x obs_event_shape
     #                                                                which is the same as sample x mix_batch_shape x (1,) x obs_event_shape
-    def __init__(self, obs_dist, transition_mask=None):        
+    def __init__(self, obs_dist, transition_mask=None,ptemp =1.0):        
         self.obs_dist = obs_dist
         # assume that the first dimension the batch_shape is the dimension of the HMM
         self.hidden_dim = obs_dist.batch_shape[-1]
@@ -16,6 +16,7 @@ class HMM():
         self.batch_shape = obs_dist.batch_shape[:-1]        
         self.batch_dim = len(self.batch_shape)
         self.transition_mask = transition_mask
+        self.ptemp = ptemp
 
         self.transition = Dirichlet(0.5*torch.ones(self.batch_shape+(self.hidden_dim,self.hidden_dim),requires_grad=False)+1.0*torch.eye(self.hidden_dim,requires_grad=False)).to_event(1)
         if transition_mask is not None:
@@ -50,10 +51,11 @@ class HMM():
             if(keepdim):
                 return xmax + (x-xmax).exp().sum(dim=dim,keepdim=keepdim).log()
             else:
+                x = (x-xmax).exp().sum(dim=dim,keepdim=keepdim).log()
                 for d in dim:
                     xmax = xmax.squeeze(d)
-                return xmax + (x-xmax).exp().sum(dim=dim,keepdim=keepdim).log()
-
+                return xmax + x
+            
     def logmatmulexp(self,x,y):
 
         x_shift = x.max(-1, keepdim=True)[0]
@@ -111,8 +113,11 @@ class HMM():
         # SEz0 = (bw_logits - bw_logits.max(-1,keepdim=True)[0]).exp()
         # SEz0 = SEz0/SEz0.sum(-1,True)      
 
-        self.p =  (fw_logits - fw_logits.max(-1,keepdim=True)[0]).exp()
+        self.p =  ((fw_logits - fw_logits.max(-1,keepdim=True)[0])/self.ptemp).exp()
         self.p = self.p/self.p.sum(-1,keepdim=True)
+
+        if self.p.isnan().any():
+            print('HMM:  NaN in p')
 
         return SEzz, SEz0, logZ  # Note that only Time has been integrated out of sufficient statistics
                                             # and the despite the name fw_logits is posterior probability of states

@@ -12,6 +12,8 @@ from .MultivariateNormal_vector_format import MultivariateNormal_vector_format
 from .NormalGamma import NormalGamma
 from .NormalInverseWishart import NormalInverseWishart
 from .DiagonalWishart import DiagonalWishart
+from .DiagonalWishart import DiagonalWishart_UnitTrace
 from .MatrixNormalGamma import MatrixNormalGamma
+from .MatrixNormalGamma import MatrixNormalGamma_UnitTrace
 from .MatrixNormalWishart import MatrixNormalWishart
 from .TensorNormalWishart import TensorNormalWishart

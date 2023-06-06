@@ -81,10 +81,11 @@ class MatrixNormalWishart():
             SEyx = SEyx*self.X_mask.unsqueeze(-2)
         invV = self.invV_0 + SExx
         muinvV = self.mu_0@self.invV_0 + SEyx
-#        mu = torch.linalg.solve(invV,muinvV.transpose(-2,-1)).transpose(-2,-1)
-        mu = muinvV @ invV.inverse()
+        mu = torch.linalg.solve(invV,muinvV.transpose(-2,-1)).transpose(-2,-1)
+#        mu = muinvV @ invV.inverse()
 
-        SEyy = SEyy - mu@invV@mu.transpose(-2,-1) + self.mu_0@self.invV_0@self.mu_0.transpose(-2,-1)
+        SEyy = SEyy - mu@invV@mu.transpose(-2,-1) 
+        SEyy = SEyy + self.mu_0@self.invV_0@self.mu_0.transpose(-2,-1)
         self.invU.ss_update(SEyy,n,lr)
 
         self.invV = (invV-self.invV)*lr + self.invV
@@ -92,10 +93,11 @@ class MatrixNormalWishart():
         if(self.mask is not None):
             self.mu = self.mu*self.mask
 
-        self.invV = 0.5*(self.invV + self.invV.transpose(-2,-1))
-        self.invV_d, self.invV_v = torch.linalg.eigh(self.invV) 
-        self.V = self.invV_v@(1.0/self.invV_d.unsqueeze(-1)*self.invV_v.transpose(-2,-1))
-        self.logdetinvV = self.invV_d.log().sum(-1)
+#        self.invV_d, self.invV_v = torch.linalg.eigh(self.invV) 
+#        self.V = self.invV_v@(1.0/self.invV_d.unsqueeze(-1)*self.invV_v.transpose(-2,-1))        
+#        self.logdetinvV = self.invV_d.log().sum(-1)
+        self.V=self.invV.inverse()
+        self.logdetinvV = self.invV.logdet()  
 
     def update(self,pX,pY,p=None,lr=1.0):
         if p is None:
@@ -117,7 +119,6 @@ class MatrixNormalWishart():
                     SEx = SEx.sum(0)
                     SEy = SEy.sum(0)
                     
-
                 SExx = torch.cat((SExx,SEx),dim=-1)
                 SEx = torch.cat((SEx,n.expand(SEx.shape[:-2]+(1,1))),dim=-2)
                 SExx = torch.cat((SExx,SEx.transpose(-2,-1)),dim=-2)
@@ -127,11 +128,10 @@ class MatrixNormalWishart():
             self.ss_update(SExx,SEyx,SEyy,n,lr)
             
         else:
-            for i in range(self.event_dim):
-                p=p.unsqueeze(-1)
+            p=p.view(p.shape + (1,)*self.event_dim)
             SExx = (pX.EXXT()*p).sum(0)
             SEyy = (pY.EXXT()*p).sum(0)
-            SEyx = (pY.EX()@pX.EX().transpose(-2,-1)*p).sum(0)
+            SEyx = ((pY.EX()@pX.EX().transpose(-2,-1))*p).sum(0)
             if self.pad_X:
                 SEx = (pX.EX()*p).sum(0)
                 SEy = (pY.EX()*p).sum(0)
@@ -150,7 +150,7 @@ class MatrixNormalWishart():
                 SEx = torch.cat((SEx,p),dim=-2)
                 SExx = torch.cat((SExx,SEx.transpose(-2,-1)),dim=-2)
                 SEyx = torch.cat((SEyx,SEy),dim=-1)
-            self.ss_update(SExx,SEyx,SEyy,p.squeeze(-1).squeeze(-1),lr)
+            self.ss_update(SExx,SEyx,SEyy,p.view(p.shape[:-2]),lr)
 
     def raw_update(self,X,Y,p=None,lr=1.0):
         # Assumes that X and Y are encoded as vectors, i.e. the terminal dimensions of X are (p,1)

@@ -12,7 +12,7 @@ from dists.utils import matrix_utils
 import time
 
 class DMBD(LinearDynamicalSystems):
-    def __init__(self, obs_shape, role_dims, hidden_dims, control_dim = 0, regression_dim = 0, latent_noise = 'independent', batch_shape=(),number_of_objects=1, unique_obs = False):
+    def __init__(self, obs_shape, role_dims, hidden_dims, control_dim = 0, regression_dim = 0, batch_shape=(),number_of_objects=1, unique_obs = False):
 
         # obs_shape = (n_obs,obs_dim)
         #       n_obs is the number of observables
@@ -39,7 +39,7 @@ class DMBD(LinearDynamicalSystems):
 
         self.number_of_objects = number_of_objects
         self.unique_obs = unique_obs
-        self.latent_noise = latent_noise
+#        self.latent_noise = latent_noise
         self.obs_shape = obs_shape
         self.obs_dim = obs_dim
         self.event_dim = len(obs_shape)
@@ -73,6 +73,9 @@ class DMBD(LinearDynamicalSystems):
             mask = A_mask,
             pad_X=False,
             uniform_precision=False)
+        # self.A = MatrixNormalWishart(torch.zeros(batch_shape + offset + (hidden_dim,hidden_dim+control_dim),requires_grad=False) + torch.eye(hidden_dim,hidden_dim+control_dim,requires_grad=False),
+        #     mask = A_mask,
+        #     pad_X=False)
 
 #       The first line implements the observation model so that each observation has a unique set of roles while the second 
 #       line forces the role model to be shared by all observation.  There is no difference ie computation time associaated with this choice
@@ -165,7 +168,7 @@ class DMBD(LinearDynamicalSystems):
 
     def update_latents(self,y,u,r,p=None,lr=1.0):
         if self.obs_model.p is None:
-            self.obs_model.p = torch.rand(y.shape[:-2]+(self.role_dim,),requires_grad=False)
+            self.obs_model.p = torch.ones(y.shape[:-2]+(self.role_dim,),requires_grad=False)
             self.obs_model.p = self.obs_model.p/self.obs_model.p.sum(-1,True)
         super().update_latents(y,u,r,p=None,lr=lr)
 
@@ -191,29 +194,24 @@ class DMBD(LinearDynamicalSystems):
                 self.update_assignments(y,r)  # compute the ss for the markov part of the obs model
                 self.update_latents(y,u,r)  # compute the ss for the latent 
 
-            # t1 = time.time()
-            # print('update assignments')
             self.update_assignments(y,r)  
-            # print('done in ',time.time()-t1,' seconds')
-            # t1 = time.time()
-            # print('update latents')
-            self.update_latents(y,u,r)  
-            # print('done in ',time.time()-t1,' seconds')
-            # idx = self.obs_model.p>0
-            # mask_temp = self.obs_model.transition.loggeomean()>-torch.inf
-            # ELBO_contrib_obs = (self.obs_model.transition.loggeomean()[mask_temp]*self.obs_model.SEzz[mask_temp]).sum()
-            # ELBO_contrib_obs = ELBO_contrib_obs + (self.obs_model.initial.loggeomean()*self.obs_model.SEz0).sum()
-            # ELBO_contrib_obs = ELBO_contrib_obs - (self.obs_model.p[idx].log()*self.obs_model.p[idx]).sum()
-            # ELBO = self.ELBO().sum() + ELBO_contrib_obs
-            ELBO = self.ELBO().sum()
-            self.update_latent_parms(p=None,lr = lr)  # updates parameters of latent dynamics
+            # print('Number of NaNs in p = ',self.obs_model.p.isnan().sum())
             self.update_obs_parms(y, r, lr=lr)
+            # print('Number of NaNs in obs_parms.transition = ',self.obs_model.transition.mean().isnan().sum())
+            # print('Number of NaNs in obs_parms.initial = ',self.obs_model.initial.mean().isnan().sum())
+            # print('Number of NaNs in obs_parms.emission = ',self.obs_model.obs_dist.EXXT().isnan().sum())
+            self.update_latents(y,u,r)  
+            # print('Number of NaNs in px = ',self.px.EXXT().isnan().sum())
+            ELBO = self.ELBO().sum()            
+            self.update_latent_parms(p=None,lr = lr)  
+            # print('Number of NaNs in latent_parms A = ',self.A.EXXT().isnan().sum())
+            # print('Number of NaNs in latent_parms x0 = ',self.x0.EXXT().isnan().sum())
+
             print('Percent Change in ELBO = ',((ELBO-ELBO_last)/ELBO_last.abs()).numpy()*100,  '   Iteration Time = ',(time.time()-t))
             self.ELBO_save = torch.cat((self.ELBO_save,ELBO*torch.ones(1)),dim=-1)
 
-
     def ELBO(self):
-        idx = self.obs_model.p>0
+        idx = self.obs_model.p>1e-8
         mask_temp = self.obs_model.transition.loggeomean()>-torch.inf
         ELBO_contrib_obs = (self.obs_model.transition.loggeomean()[mask_temp]*self.obs_model.SEzz[mask_temp]).sum()
         ELBO_contrib_obs = ELBO_contrib_obs + (self.obs_model.initial.loggeomean()*self.obs_model.SEz0).sum()

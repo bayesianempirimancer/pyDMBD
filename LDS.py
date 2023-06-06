@@ -9,6 +9,7 @@ import torch
 import numpy as np
 from dists import MatrixNormalWishart
 from dists import MatrixNormalGamma
+#from dists import MatrixNormalGamma_UnitTrace
 from dists import NormalInverseWishart
 from dists import MultivariateNormal_vector_format
 
@@ -160,7 +161,6 @@ class LinearDynamicalSystems():
             self.SE_y_y = self.SE_y_y.sum(0)
             self.T = self.T.sum(0)
             self.N = self.N.sum(0)
-
             
         self.SE_x0_x0 = 0.5*(self.SE_x0_x0 + self.SE_x0_x0.transpose(-1,-2))
         self.SE_xpu_xpu = 0.5*(self.SE_xpu_xpu + self.SE_xpu_xpu.transpose(-1,-2))
@@ -186,15 +186,6 @@ class LinearDynamicalSystems():
             self.px = MultivariateNormal_vector_format(mu = torch.zeros(y.shape[:-2]+(self.hidden_dim,1),requires_grad=False))
 
         self.px.invSigma, self.px.invSigmamu, self.px.Sigma, self.px.mu, Sigma_t_tp1, Sigma_x0_x0, SE_x0, logZ, logZ_b = self.forward_backward_loop(y,u,r)  # updates and stores self.px
-
-#         invSigma, invSigmamu, Sigma, mu, Sigma_t_tp1, Sigma_x0_x0, mu_x0, logZ, logZ_b = self.forward_backward_loop(y,u,r)  # updates and stores self.px
-        # if self.px is None:
-        #     self.px = MultivariateNormal_vector_format(mu = mu,Sigma = Sigma, invSigma = invSigma, invSigmamu = invSigmamu)
-        # else:   
-        #     self.px.mu=mu
-        #     self.px.Sigma=Sigma
-        #     self.px.invSigma = invSigma
-        #     self.px.invSigmamu = invSigmamu
 
         # compute sufficient statistics $ note that these sufficient statistics are only integrated over time
         SE_x0_x0 = ((Sigma_x0_x0 + SE_x0 @ SE_x0.transpose(-2,-1)))
@@ -387,15 +378,14 @@ class LinearDynamicalSystems():
 
         invGamma = torch.zeros(invSigma.shape[1:],requires_grad=False)
         invGammamu = torch.zeros(invSigmamu.shape[1:],requires_grad=False)
-        Residual = torch.zeros(Residual.shape,requires_grad=False)
-        logZ_b = torch.zeros(logZ.shape,requires_grad=False)
+        # Residual = torch.zeros(Residual.shape,requires_grad=False)
+        # logZ_b = torch.zeros(logZ.shape,requires_grad=False)
 
         for t in range(T_max-2,-1,-1):
             Sigma_t_tp1[t] = Sigma_t_tp1[t] @ self.QA_xp_x.transpose(-2,-1) @ (invGamma + invSigma_like[t+1] + self.invQ - self.QA_xp_x@Sigma_t_tp1[t]*self.QA_xp_x.transpose(-2,-1)).inverse()
             invGamma, invGammamu = self.backward_step(invGamma, invGammamu, invSigma_like[t+1], invSigmamu_like[t+1],u[t+1])
 #            invGamma, invGammamu, Residual, logZ_b[t] = self.backward_step_with_Residual(invGamma, invGammamu, Residual, invSigma_like[t+1], invSigmamu_like[t+1],Residual_like[t+1],u[t+1])
             Sigma[t], mu[t], invSigma[t], invSigmamu[t] = self.forward_backward_combiner(invSigma[t], invSigmamu[t], invGamma, invGammamu )
-
 
         Sigma_t_tp1[-1] = Sigma_t_tp1[-1] @ self.QA_xp_x.transpose(-2,-1) @ (invGamma + invSigma_like[0] + self.invQ - self.QA_xp_x@Sigma_t_tp1[-1]*self.QA_xp_x.transpose(-2,-1)).inverse()#uses invSigma from tp1 which we probably should have stored 
         invGamma, invGammamu = self.backward_step(invGamma, invGammamu, invSigma_like[0], invSigmamu_like[0],u[0])

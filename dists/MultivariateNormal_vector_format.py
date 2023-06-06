@@ -101,7 +101,7 @@ class MultivariateNormal_vector_format():
         return self.ESigma() + self.mean()@self.mean().transpose(-2,-1)
 
     def EXTX(self):
-        return self.ESigma().sum(-1).sum(-1) + self.mean().transpose(-2,-1)@self.mean().squeeze(-1).squeeze(-1)
+        return self.ESigma().sum(-1).sum(-1) + (self.mean().transpose(-2,-1)@self.mean()).squeeze(-1).squeeze(-1)
 
     def Res(self):
         return - 0.5*(self.mean()*self.EinvSigmamu()).sum(-1).sum(-1) + 0.5*self.ElogdetinvSigma() - 0.5*self.dim*np.log(2*np.pi)

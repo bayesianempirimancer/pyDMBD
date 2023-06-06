@@ -47,6 +47,9 @@ class NormalInverseWishart():
     def EinvSigma(self):
         return self.invU.EinvSigma()
 
+    def EinvUX(self):
+        return (self.invU.EinvSigma()*self.mu.unsqueeze(-2)).sum(-1)
+
     def EXTinvUX(self):
         return (self.mu.unsqueeze(-1)*self.invU.EinvSigma()*self.mu.unsqueeze(-2)).sum(-1).sum(-1) + self.dim/self.lambda_mu
 
@@ -120,8 +123,6 @@ class NormalInverseWishart():
         KL = KL + self.invU.KLqprior()
         return KL
 
-    def logZ(self):
-        return 0.5*self.dim*np.log(2*np.pi) + self.invU.logZ()
 
 # ## Test niw
 # num_samples = 500

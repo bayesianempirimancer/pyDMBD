@@ -109,7 +109,7 @@ class LinearDynamicalSystems():
         L = -torch.tensor(np.inf,requires_grad=False)
         L_last = L
         y,u,r = self.reshape_inputs(y,u,r) 
-
+        DL = 0.0
         for i in range(iters):
             L_last = L
             self.update_latents(y,u,r)
@@ -121,7 +121,7 @@ class LinearDynamicalSystems():
                 print("Percent Change in ELBO %f" % (DL/L.abs()*100))
 
         if(verbose==False):
-            print("Percent Change in ELBO %f" % (DL/L_last.abs()*100,))
+            print("Percent Change in ELBO %f" % (DL/L_last.abs()*100,)) #ignore this warning
 
     def ss_update(self,p=None,lr=1.0):
         # raw_updated summed over time but not sample (or batch)

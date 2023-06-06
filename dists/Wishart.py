@@ -44,6 +44,15 @@ class Wishart():
         self.nu = (self.nu_0 + n)*lr + (1-lr)*self.nu
         self.U = self.invU.inverse()
         self.logdet_invU = self.invU.logdet()
+# _HACK
+        idx = ~(self.logdet_invU>self.logdet_invU_0)
+        if idx.sum()>0:
+            print('Wishart ss_update hack triggered at',idx.sum(),'locations')
+            print(idx)
+            self.invU[idx] = self.invU_0[idx]
+            self.U[idx] = self.invU_0[idx].inverse()
+            self.nu[idx] = self.nu_0[idx]
+            self.logdet_invU[idx] = self.logdet_invU_0[idx]
 
     def mean(self):
         return self.U*self.nu.unsqueeze(-1).unsqueeze(-1)

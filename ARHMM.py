@@ -67,7 +67,7 @@ class ARHMM_prXRY(HMM):
         return self.obs_dist.Elog_like_given_pX_pY(MultivariateNormal_vector_format(mu=mu,Sigma=Sigma),XRY[2])
 
     def update_obs_parms(self,XRY,lr):
-        Sigma = matrix_utils.block_diag_matrix_builder(XRY[0].Sigma,torch.zeros(XRY[0].shape[:-2]+(self.p2,self.p2),requires_grad=False))
+        Sigma = matrix_utils.block_diag_matrix_builder(XRY[0].ESigma(),torch.zeros(XRY[0].shape[:-2]+(self.p2,self.p2),requires_grad=False))
         mu = torch.cat((XRY[0].mean(),XRY[1]),dim=-2)
         prXR = MultivariateNormal_vector_format(mu=mu,Sigma=Sigma)
         self.obs_dist.update(prXR,XRY[2],self.p,lr)
