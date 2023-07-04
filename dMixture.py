@@ -1,8 +1,7 @@
 
 import torch
-#from .Dirichlet import Dirichlet
-from .Dirichlet import Dirichlet
-class Mixture():
+from MultiNomialLogisticRegression import MultiNomialLogisticRegression
+class dMixture():
     # This class takes takes in a distribution with non trivial batch shape and 
     # produces a mixture distribution with the number of mixture components equal
     # to the terminal dimension of the batch shape.  The mixture distribution 
@@ -11,17 +10,18 @@ class Mixture():
     # IMPORTANT:  This routine expects data to be sample_shape + dist.batch_shape[:-1] + (1,) + dist.event_shape 
     #             or if running VB batches in parallel:  sample_shape + (1,)*mix.batch_dim  + (1,) + dist.event_shape
     #       when this is the case the observations will not need to be reshaped at any time.  Only p will be reshaped for raw_updates
+    #
 
-
-    def __init__(self,dist,expand_to_batch=False):
+    def __init__(self,dist,p,expand_to_batch=False):
         self.event_dim = 1
         self.batch_dim = dist.batch_dim - 1
         self.event_shape = dist.batch_shape[-1:]
         self.batch_shape = dist.batch_shape[:-1]
-        self.pi = Dirichlet(0.5*torch.ones(self.batch_shape+self.event_shape,requires_grad=False))
+        self.pi = MultiNomialLogisticRegression(self.event_shape[-1],p,batch_shape = self.batch_shape,pad_X=True)
         self.dist = dist
         self.logZ = torch.tensor(-torch.inf,requires_grad=False)
         self.expand_to_batch = expand_to_batch
+        print('Untested')
 
     def to_event(self,n):
         if n == 0:
@@ -33,8 +33,8 @@ class Mixture():
         self.dist.to_event(n)
         return self
 
-    def update_assignments(self,X):
-            log_p = self.Elog_like(X)
+    def update_assignments(self,X,Y):
+            log_p = self.Elog_like(Y) + self.pi.log_predict(X)
             shift = log_p.max(-1,True)[0]
             log_p = log_p - shift
             self.logZ = ((log_p).logsumexp(-1,True) + shift).squeeze(-1)
@@ -45,33 +45,30 @@ class Mixture():
                 self.logZ = self.logZ.sum(0)
                 self.NA = self.NA.sum(0)
 
-    def update_parms(self,X,lr=1.0):
-        self.pi.ss_update(self.NA,lr=lr)
-        self.update_dist(X,lr=lr)
+    def update_parms(self,X,Y,lr=1.0):
+        self.pi.raw_update(X,self.p,lr=lr)
+        self.update_dist(Y,lr=lr)
 
-    def raw_update(self,X,iters=1,lr=1.0,verbose=False):
-        self.update(X,iters=iters,lr=lr,verbose=verbose)
-
-    def update(self,X,iters=1,lr=1.0,verbose=False):
+    def update(self,X,Y,iters=1,lr=1.0,verbose=False):
         if self.expand_to_batch:
-            X = X.view(X.shape[:-self.dist.event_dim]+(1,)+X.shape[-self.dist.event_dim:])
+            Y = Y.view(Y.shape[:-self.dist.event_dim]+(1,)+Y.shape[-self.dist.event_dim:])
         # Otherwise it expects X to be sample_shape + dist.batch_shape[:-1] + (1,) + dist.event_shape 
         ELBO = torch.tensor(-torch.inf)
         for i in range(iters):
             # E-Step
             ELBO_last = ELBO
-            self.update_assignments(X)
+            self.update_assignments(X,Y)
             ELBO = self.ELBO()
-            self.update_parms(X,lr)
+            self.update_parms(X,Y,lr)
             if verbose:
                 print('Percent Change in ELBO:   ',(ELBO-ELBO_last)/ELBO_last.abs()*100.0)
 
-    def update_dist(self,X,lr):
-        self.dist.raw_update(X,self.p,lr)
+    def update_dist(self,Y,lr):
+        self.dist.raw_update(Y,self.p,lr)
 
-    def Elog_like(self,X):
+    def Elog_like(self,X,Y):
         #broken for non trivial batch shape because of incompatibility in dist.batch_shape with data shape
-        return self.dist.Elog_like(X) + self.pi.loggeomean()
+        return self.dist.Elog_like(Y) + self.pi.loggeomean(X)
 
     def KLqprior(self):
         KL = self.pi.KLqprior() + self.dist.KLqprior().sum(-1)
@@ -115,7 +112,7 @@ class Mixture():
         return out
 
 
-# print('TEST Vanilla MIXTURE')
+# print('TEST Vanilla dMIXTURE')
 # #
 # import numpy as np
 # dim=2

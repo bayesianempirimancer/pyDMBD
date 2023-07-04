@@ -99,6 +99,9 @@ class NLRegression_orig():
             self.U.lambda_mu = self.U.lambda_mu + lr*(self.NA+self.U.lambda_mu_0 - self.U.lambda_mu)
             self.U.mu = self.U.mu + lr*(mu - self.U.mu)
 
+    def forward(self,X):
+        return self.predict(X)
+
     def predict(self,X):
         X = X.unsqueeze(-2).unsqueeze(-1)
         invSigma_u_u = self.W.EinvSigma() 
@@ -241,6 +244,8 @@ class NLRegression_low_rank():
             self.U.ss_update(SEuu.diagonal(dim1=-1,dim2=-2),SEu.squeeze(-1),self.NA,lr)
 #             self.U.ss_update(SEuu,SEu.squeeze(-1),self.NA,lr)
 
+    def forward(self,X):
+        return self.predict(X)
 
     def predict(self,X):
         for i in range(self.batch_dim+1):
@@ -340,6 +345,9 @@ class NLRegression_full_rank():
             self.pi.ss_update(self.NA,lr)
             self.A.raw_update(X,Y,p=self.p,lr=lr)
             self.X.raw_update(X.squeeze(-1),p=self.p,lr=lr)
+
+    def forward(self,X):
+        return self.predict(X)
 
     def predict(self,X):
         log_p = self.X.Elog_like(X.unsqueeze(-2)) + self.pi.loggeomean()

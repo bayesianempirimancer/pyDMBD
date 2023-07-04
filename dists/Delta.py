@@ -1,29 +1,15 @@
 import torch
 class Delta():
     def __init__(self,X):
-        self.event_dim = 0
-        self.batch_dim = len(X.shape)
-        self.event_shape = ()
-        self.batch_shape = X.shape
         self.X = X
-
-    def to_event(self,n):
-        if n == 0:
-            return self
-        self.event_dim = self.event_dim + n
-        self.batch_dim = self.batch_dim - n 
-        self.event_shape = self.batch_shape[-n:] + self.event_shape 
-        self.batch_shape = self.batch_shape[:-n]
-        return self
 
     def unsqueeze(self,dim):  # only appliles to batch
         self.X = self.X.unsqueeze(dim)
-        dim = dim + self.event_dim     
-        if dim == -1:
-            self.batch_shape = self.batch_shape + (1,)
-        else:
-            self.batch_shape = self.batch_shape[:dim] + (1,) + self.batch_shape[dim:]
-        self.batch_dim = len(self.batch_shape)
+        return self
+
+    def squeeze(self,dim):  # only appliles to batch
+        self.X = self.X.squeeze(dim)
+        return self
 
     # def Elog_like(self):
     #     torch.ones(self.X.shape[:-self.event_dim],requires_grad=False)

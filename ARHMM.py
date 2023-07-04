@@ -29,8 +29,8 @@ class ARHMM(HMM):
         return invSigma_x_x, invSigmamu_x, Residual
 
 class ARHMM_prXY(HMM):
-    def __init__(self,dim,n,p,batch_shape = (),mask=None,pad_X=True):
-        dist = MatrixNormalWishart(torch.zeros(batch_shape + (dim,n,p),requires_grad=False),mask=mask,pad_X=pad_X)
+    def __init__(self,dim,n,p,batch_shape = (),X_mask = None, mask=None,pad_X=True):
+        dist = MatrixNormalWishart(torch.zeros(batch_shape + (dim,n,p),requires_grad=False),mask=mask,X_mask=X_mask,pad_X=pad_X)
         super().__init__(dist)
         
     def obs_logits(self,XY):
@@ -49,10 +49,10 @@ class ARHMM_prXY(HMM):
 
 
 class ARHMM_prXRY(HMM):
-    def __init__(self,dim,n,p1,p2,batch_shape=(),mask=None,pad_X=False):
+    def __init__(self,dim,n,p1,p2,batch_shape=(),mask=None,X_mask = None, pad_X=False):
         self.p1 = p1
         self.p2 = p2
-        dist = MatrixNormalWishart(torch.zeros(batch_shape + (dim,n,p1+p2),requires_grad=False),mask=mask,pad_X=pad_X)
+        dist = MatrixNormalWishart(torch.zeros(batch_shape + (dim,n,p1+p2),requires_grad=False),mask=mask,X_mask=X_mask,pad_X=pad_X)
         super().__init__(dist)
 
     def Elog_like(self,XRY):

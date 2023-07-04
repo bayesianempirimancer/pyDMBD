@@ -15,8 +15,7 @@ class MatrixNormalWishart():
     # i.e.  Y = A @ X + U^{-1/2} @ eps, where A is the random variable represented by the MNW prior
     # When used for linear regression, either zscore X and Y or pad X with a column of ones
     #   mask is a boolean tensor of shape mu_0 that indicates which entries of mu can be non-zero
-    #         mask must be the same for all elements of a given batch, i.e. it is n x p 
-    #   X_mask is a boolean tensor of shape (mu_0.shape[:-2] + (1,) + mu_shape[-1:]) 
+    #   X_mask is a boolean tensor of shape (mu_0.shape[:-2]+mu_shape[-1:]) 
     #           that indicates which entries of X contribute to the prediction 
 
     def __init__(self,mu_0,U_0=None,V_0=None,mask=None,X_mask=None,pad_X=False):
@@ -45,27 +44,26 @@ class MatrixNormalWishart():
         self.mask = mask
         self.X_mask = X_mask
         self.mu_0 = mu_0
-        self.mu = 0.1*torch.randn(mu_0.shape,requires_grad=False)/np.sqrt(self.n*self.p)+mu_0
-        self.invV_0 = V_0.inverse()
-        self.V = V_0
-        self.invV = self.invV_0
-        self.invU = Wishart((self.n+2)*torch.ones(U_0.shape[:-2],requires_grad=False),U_0)
-        self.logdetinvV = self.invV.logdet()    
-        self.logdetinvV_0=self.invV_0.logdet()    
-
-        if X_mask is not None:
-            if pad_X:
-                self.X_mask = torch.cat((X_mask,torch.ones(X_mask.shape[:-1]+(1,),requires_grad=False)>0),dim=-1)
-            self.mu_0 = self.mu_0*self.X_mask
-            self.mu = self.mu*self.X_mask
-            self.V = self.V*self.X_mask*self.X_mask.transpose(-2,-1)
-            self.invV = self.invV*self.X_mask*self.X_mask.transpose(-2,-1)
+        self.V_0 = V_0
+        self.mu = torch.randn(mu_0.shape,requires_grad=False)/np.sqrt(self.n*self.p)+mu_0
 
         if mask is not None:
             if pad_X:
                 self.mask = torch.cat((mask,torch.ones(mask.shape[:-1]+(1,),requires_grad=False)>0),dim=-1)
             self.mu_0 = self.mu_0*self.mask
             self.mu = self.mu*self.mask
+        if X_mask is not None:
+            if pad_X:
+                self.X_mask = torch.cat((X_mask,torch.ones(X_mask.shape[:-1]+(1,),requires_grad=False)>0),dim=-1)
+            self.V_0 = self.V_0*((torch.eye(self.p,requires_grad=False)>0)+X_mask.unsqueeze(-1)*X_mask.unsqueeze(-2))
+
+        self.invV_0 = V_0.inverse()
+        self.V = self.V_0
+        self.invV = self.invV_0
+        self.invU = Wishart((self.n+2)*torch.ones(U_0.shape[:-2],requires_grad=False),U_0)
+
+        self.logdetinvV = self.invV.logdet()    
+        self.logdetinvV_0=self.invV_0.logdet()    
 
     def to_event(self,n):
         if n == 0:
@@ -78,36 +76,19 @@ class MatrixNormalWishart():
         return self
 
     def ss_update(self,SExx,SEyx,SEyy,n,lr=1.0):
-
         if self.X_mask is not None:
-            SExx = SExx*self.X_mask*self.X_mask.transpose(-2,-1)
-            SEyx = SEyx*self.X_mask
-            invV = self.invV_0 + SExx
-            muinvV = self.mu_0@self.invV_0 + SEyx
-            mu = muinvV@invV.inverse()
-            mu = mu*self.X_mask
-        else:
-            invV = self.invV_0 + SExx
-            muinvV = self.mu_0@self.invV_0 + SEyx
-            mu = torch.linalg.solve(invV,muinvV.transpose(-2,-1)).transpose(-2,-1)
-            # mu = muinvV @ invV.inverse()
-
-        if self.mask is not None:  # Assumes mask is same for whole batch
-            V = invV.inverse()
-            U = self.invU.EinvSigma().inverse()
-            Astar = V.unsqueeze(-3).unsqueeze(-2)*U.unsqueeze(-2).unsqueeze(-1)
-            A  = Astar[...,~self.mask,:,:][...,:,~self.mask]            
-            b = mu[...,~self.mask]
-            gamma = torch.zeros_like(mu)
-            gamma[...,~self.mask] = torch.linalg.solve(A,b)
-            mu = mu - U@gamma@V
-            mu = mu*self.mask
+            SExx = SExx*self.X_mask.unsqueeze(-1)*self.X_mask.unsqueeze(-2)
+            SEyx = SEyx*self.X_mask.unsqueeze(-2)
+        invV = self.invV_0 + SExx
+        muinvV = self.mu_0@self.invV_0 + SEyx
+#        mu = torch.linalg.solve(invV,muinvV.transpose(-2,-1)).transpose(-2,-1)
+        mu = muinvV @ invV.inverse()
 
         SEyy = SEyy - mu@invV@mu.transpose(-2,-1) 
         SEyy = SEyy + self.mu_0@self.invV_0@self.mu_0.transpose(-2,-1)
         self.invU.ss_update(SEyy,n,lr)
+
         self.invV = (invV-self.invV)*lr + self.invV
-        self.invV = 0.5*(self.invV + self.invV.transpose(-2,-1))
         self.mu = (mu-self.mu)*lr + self.mu
         if(self.mask is not None):
             self.mu = self.mu*self.mask
@@ -117,12 +98,6 @@ class MatrixNormalWishart():
 #        self.logdetinvV = self.invV_d.log().sum(-1)
         self.V=self.invV.inverse()
         self.logdetinvV = self.invV.logdet()  
-
-        if self.X_mask is not None:
-            self.V = self.V * self.X_mask * self.X_mask.transpose(-2,-1)
-            self.invV = self.invV * self.X_mask * self.X_mask.transpose(-2,-1)
-            self.mu = self.mu*self.X_mask
-            self.logdetinvV = self.logdetinvV - self.logdetinvV_0*(~self.X_mask).sum(-1).sum(-1)
 
     def update(self,pX,pY,p=None,lr=1.0):
         if p is None:
@@ -214,9 +189,7 @@ class MatrixNormalWishart():
     def KLqprior(self):
 
         KL = self.n/2.0*self.logdetinvV - self.n/2.0*self.logdetinvV_0 - self.n*self.p/2.0
-        if self.X_mask is not None:
-            KL = KL + self.n/2.0*self.logdetinvV_0*(self.X_mask).sum(-1).sum(-1)
-        KL = KL + 0.5*self.n*(self.invV_0*self.V).sum(-1).sum(-1)
+        KL = KL + 0.5*self.n*(self.invV_0@self.V).sum(-1).sum(-1)
         temp = ((self.mu-self.mu_0).transpose(-2,-1)@self.invU.EinvSigma()@(self.mu-self.mu_0)) 
         KL = KL + 0.5*(self.invV_0*temp).sum(-1).sum(-1)
         
@@ -259,8 +232,7 @@ class MatrixNormalWishart():
         pY = MultivariateNormal_vector_format(Sigma = Sigma_y_y, mu = mu_y, invSigmamu = invSigmamu_y)
         return pY
         
-    def backward(self,pY):  #  Incorrect needs to use matrix inversion instead, i.e. 
-        print('Lazy version of backward routine does not use matrix inversion')
+    def backward(self,pY):
         if self.pad_X:
             invSigma_x_x = self.EXTinvUX()[...,:-1,:-1]
             invSigmamu_x = self.EXTinvU()[...,:-1,:]@pY.mean() - self.EXTinvUX()[...,:-1,-1:]
@@ -415,26 +387,6 @@ class MatrixNormalWishart():
 # Yhat = (W.mu@X.unsqueeze(-1)).squeeze(-1)
 # plt.scatter(Y,Yhat)
 # plt.show()
-
-# print('TEST VANILLA Matrix Normal Wishart with X_mask')
-# n=2
-# p=10
-# n_samples = 200
-# W = MatrixNormalWishart(torch.zeros(n,p),torch.eye(n),torch.eye(p))
-# w_true = torch.randn(n,p)/np.sqrt(p)
-# X_mask = w_true.abs().sum(-2)<1.0
-# w_true = w_true*X_mask.unsqueeze(-2)
-# b_true = torch.randn(n,1)*0
-# X=torch.randn(n_samples,p)
-# Y=torch.zeros(n_samples,n)
-# for i in range(n_samples):
-#     Y[i,:] = X[i:i+1,:]@w_true.transpose(-1,-2) + b_true.transpose(-2,-1) + torch.randn(1)/4.0
-# from matplotlib import pyplot as plt
-# W.raw_update(X.unsqueeze(-1),Y.unsqueeze(-1))
-# Yhat = (W.mu@X.unsqueeze(-1)).squeeze(-1)
-# plt.scatter(Y,Yhat)
-# plt.show()
-
 
 
 # print('TEST VANILLA Matrix Normal Wishart with pad_X = True')

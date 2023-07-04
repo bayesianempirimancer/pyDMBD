@@ -70,7 +70,8 @@ class NormalInverseWishart():
 
         lambda_mu = self.lambda_mu_0 + n
         mu = (self.lambda_mu_0.unsqueeze(-1)*self.mu_0 + SEx)/lambda_mu.unsqueeze(-1)
-        invV = SExx + self.lambda_mu_0.unsqueeze(-1).unsqueeze(-1)*self.mu_0.unsqueeze(-1)*self.mu_0.unsqueeze(-2) - lambda_mu.unsqueeze(-1).unsqueeze(-1)*mu.unsqueeze(-1)*mu.unsqueeze(-2)
+#        invV = SExx + self.lambda_mu_0.unsqueeze(-1).unsqueeze(-1)*self.mu_0.unsqueeze(-1)*self.mu_0.unsqueeze(-2) - lambda_mu.unsqueeze(-1).unsqueeze(-1)*mu.unsqueeze(-1)*mu.unsqueeze(-2)
+        invV = SExx + self.lambda_mu_0.unsqueeze(-1).unsqueeze(-1)*self.mu_0.unsqueeze(-1)*self.mu_0.unsqueeze(-2) - n.unsqueeze(-1).unsqueeze(-1)*mu.unsqueeze(-1)*mu.unsqueeze(-2)
 
         self.lambda_mu = (lambda_mu-self.lambda_mu)*lr + self.lambda_mu
         self.mu = (mu-self.mu)*lr + self.mu
@@ -123,26 +124,5 @@ class NormalInverseWishart():
         KL = KL + self.invU.KLqprior()
         return KL
 
-
-# ## Test niw
-# num_samples = 500
-# dim=2
-# batch_dim = 
-# event_shape = (4,dim,)
-# batch_shape = (batch_dim+1,batch_dim,)
-
-
-# mu = torch.randn(batch_shape + event_shape)*2
-# A = torch.randn(batch_shape + event_shape + (dim,))/np.sqrt(dim)
-# eps = 1.0/10.0
-# Sigma = A.transpose(-1,-2)@A + eps**2*torch.eye(dim)
-
-# data = mu + (torch.randn((num_samples,) + batch_shape + event_shape).unsqueeze(-2)@A).squeeze(-2) + torch.randn((num_samples,) + batch_shape + event_shape)*eps
-# niw = NormalinverseWishart(torch.ones(batch_shape + event_shape[:-1]),torch.zeros(batch_shape + event_shape),torch.ones(batch_shape + event_shape[:-1])*(2+dim),torch.zeros(batch_shape+event_shape+(dim,))+torch.eye(dim)).to_event(len(event_shape)-1)
-# niw.raw_update(data,lr=1)
-# ell = niw.Elog_like(data)
-
-# p = (ell - ell.logsumexp(-1,keepdim=True)).exp()
-# niw.raw_update(data,p,lr=1)
 
 

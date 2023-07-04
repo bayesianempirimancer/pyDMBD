@@ -31,8 +31,7 @@ class NLRegression_Multinomial():
         AY = AY.view(AY.shape[:-2] + (self.batch_dim+1)*(1,) + AY.shape[-2:])
 
         for i in range(int(iters)):
-            log_p = self.Z.log_predict(X)  # this is the forward routine
-            log_p = self.A.Elog_like(AX,AY) + log_p
+            log_p = self.A.Elog_like(AX,AY) + self.Z.log_predict(X)
             self.logZ = log_p.logsumexp(-1).sum() 
             log_p = log_p - log_p.max(-1,keepdim=True)[0]
             self.p = log_p.exp()
@@ -53,7 +52,8 @@ class NLRegression_Multinomial():
         AY = AY.view(AY.shape[:-2] + (self.batch_dim+1)*(1,) + AY.shape[-2:])
         invSigma,invSigmamu,Res = self.A.Elog_like_X(AY)
 
-
+    def forward(self,X):
+        return self.predict(X)
 
     def predict_full(self,X):
         log_p = self.Z.log_predict(X)  

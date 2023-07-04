@@ -5,249 +5,301 @@ import numpy as np
 import time
 from matplotlib import pyplot as plt
 
-# print('Test Autoregressive Hidden Markov Model Variants...')
-# print('TEST Vanilla ARHMM')
-# from ARHMM import *
 
-# dim =6
-# batch_dim = 7
-# hidden_dim = 5
-# T = 100
-# num_samples = 200
-# sample_shape = (T,num_samples)
+print('TEST VANILLA Matrix Normal Wishart with X_mask, and mask')
+from dists import MatrixNormalWishart
+n=2
+p=10
+n_samples = 200
+batch_num = 4
+w_true = torch.randn(n,p)/np.sqrt(p)
+X_mask = w_true.abs().sum(-2)<w_true.abs().sum(-2).mean()
+X_mask = X_mask.unsqueeze(-2)
+w_true = w_true*X_mask
+b_true = torch.randn(n,1)*0
+W0 = MatrixNormalWishart(torch.zeros(n,p),torch.eye(n),torch.eye(p))
+W1 = MatrixNormalWishart(torch.zeros(n,p),torch.eye(n),torch.eye(p),X_mask=X_mask)
+W2 = MatrixNormalWishart(torch.zeros(n,p),torch.eye(n),torch.eye(p),mask=X_mask.expand(n,p))
+X=torch.randn(n_samples,p)
+Y=torch.zeros(n_samples,n)
+for i in range(n_samples):
+    Y[i,:] = X[i:i+1,:]@w_true.transpose(-1,-2) + b_true.transpose(-2,-1) + torch.randn(1)/4.0
+from matplotlib import pyplot as plt
+W0.raw_update(X.unsqueeze(-1),Y.unsqueeze(-1))
+W1.raw_update(X.unsqueeze(-1),Y.unsqueeze(-1))
+W2.raw_update(X.unsqueeze(-1),Y.unsqueeze(-1))
+Yhat = (W1.mu@X.unsqueeze(-1)).squeeze(-1)
+plt.scatter(Y,Yhat)
+plt.show()
+plt.scatter(w_true,W1.mean())
+plt.show()
 
-# A = torch.rand(hidden_dim,hidden_dim)+4*torch.eye(hidden_dim)
-# A = A/A.sum(-1,keepdim=True)
-# B = torch.randn(hidden_dim,dim)
-
-# z=torch.rand(T,num_samples,hidden_dim).argmax(-1)
-# y = torch.randn(T,num_samples,dim)
-# for t in range(1,T):
-#     z[t]=(A[z[t-1]].log() + torch.randn(1,num_samples,hidden_dim)).argmax(-1)
-#     y[t]= B[z[t]] + torch.randn(num_samples,dim)/5.0
-
-# Y=y[:,:,0:2]
-# X=y[:,:,2:5]
-
-# X=X.unsqueeze(-2).unsqueeze(-1)
-# Y=Y.unsqueeze(-2).unsqueeze(-1)
-
-# XY = (X,Y)
-# model = ARHMM(5,2,3)
-# model.update(XY,iters=20,lr=1,verbose=True)
-# loc= model.ELBO().argmax()
-
-# plt.plot(model.p[:,0,:].data)
-# plt.plot(z[:,0].data-hidden_dim/2.0)
-# plt.show()
-
-
-# print('Test ARHMM prXY')
-# from dists import Delta
-# model = ARHMM_prXY(5,2,3)
-
-# pX = Delta(X)
-# pY = Delta(Y)
-# pXY = (pX,pY)
-# model.update(pXY,iters=20,lr=1,verbose=True)
-
-# plt.plot(model.p[:,0,:].data)
-# plt.plot(z[:,0].data-hidden_dim/2.0)
-# plt.show()
-
-# Y = Y.unsqueeze(-4)
-# X = X.unsqueeze(-4)
-# pX = Delta(X)
-# pY = Delta(Y)
-# pXY = (pX,pY)
-
-# print('Test batch of ARHMM prXY')
-
-# model = ARHMM_prXY(5,2,3,batch_shape=(batch_dim,))
-# model.update(pXY,iters=20,lr=1,verbose=True)
-# loc= model.ELBO().argmax()
-# plt.plot(model.p[:,0,loc,:].data)
-# plt.plot(z[:,0].data-hidden_dim/2.0)
-# plt.show()
-
-# print('Test ARHMM prXRY')
-# from dists import MultivariateNormal_vector_format
-# from dists import Delta
-# dim =6
-# rdim=2
-# xdim=3
-# batch_dim = 0
-# hidden_dim = 5
-# T = 100
-# num_samples = 200
-# sample_shape = (T,num_samples)
-
-# A = torch.rand(hidden_dim,hidden_dim)+4*torch.eye(hidden_dim)
-# A = A/A.sum(-1,keepdim=True)
-# B = torch.randn(hidden_dim,xdim,dim)
-# C = torch.randn(hidden_dim,rdim,dim)
-
-# z=torch.rand(T,num_samples,hidden_dim).argmax(-1)
-# r = torch.randn(T,num_samples,rdim)
-# x = torch.randn(T,num_samples,xdim)
-# y = torch.randn(T,num_samples,dim)
-# for t in range(1,T):
-#     z[t]=(A[z[t-1]].log() + torch.randn(1,num_samples,hidden_dim)).argmax(-1)
-#     y[t]= (x[t].unsqueeze(-2)@B[z[t]]).squeeze(-2) + (r[t].unsqueeze(-2)@C[z[t]]).squeeze(-2) + torch.randn(num_samples,dim)/5.0
-
-# x=x.unsqueeze(-1).unsqueeze(-3)
-# pX = MultivariateNormal_vector_format(mu=x, Sigma = torch.zeros(x.shape[:-1] + (xdim,))+torch.eye(xdim)/10)
-# model = ARHMM_prXRY(5,dim,xdim,rdim,batch_shape=())
-# pXRY = (pX,r.unsqueeze(-1).unsqueeze(-3),Delta(y.unsqueeze(-1).unsqueeze(-3)))
-# model.update(pXRY,iters=20,lr=1,verbose=True)
-# print('ARHMM TEST COMPLETE')
+Yhat = (W2.mu@X.unsqueeze(-1)).squeeze(-1)
+plt.scatter(Y,Yhat)
+plt.show()
+plt.scatter(w_true,W2.mean())
+plt.show()
 
 
-# print('TEST Gaussian Mixture Model')
-# from GaussianMixtureModel import GaussianMixtureModel as GMM
-# dim = 2
-# nc = 4
-# nb = 10
-# mu = torch.randn(4,2)*4  
-# A = torch.randn(4,2,2)/np.sqrt(2)
-
-# num_samples = 200
-# data = torch.zeros(num_samples,2)
-
-# for i in range(num_samples):
-#     data[i,:] = mu[i%4,:] + A[i%4,:,:]@torch.randn(2) + torch.randn(2)/8.0
-
-
-# #data = data-data.mean(0,True)
-# #data = data/data.std(0,True)
-# nc = 6
-
-# gmm = GMM(nc,dim)
-# gmm.update(data.unsqueeze(-2),20,1,verbose=True)
-# plt.scatter(data[:,0],data[:,1],c=gmm.assignment())
-# plt.show()
-
-# print('GMM TEST COMPLETE')
+invSigma_xx, invSigmamu_x, Res = W0.Elog_like_X(Y.unsqueeze(-1))
+mu_x0 = torch.linalg.solve(invSigma_xx+1e-6*torch.eye(p),invSigmamu_x)
+plt.scatter(X,mu_x0.squeeze(),alpha=0.2)
+plt.show()
+invSigma_xx, invSigmamu_x, Res = W1.Elog_like_X(Y.unsqueeze(-1))
+mu_x1 = invSigma_xx.pinverse()@invSigmamu_x
+plt.scatter(mu_x0.squeeze(),mu_x1.squeeze(),alpha=0.2)
+plt.show()
+invSigma_xx, invSigmamu_x, Res = W2.Elog_like_X(Y.unsqueeze(-1))
+mu_x2 = invSigma_xx.pinverse()@invSigmamu_x
+plt.scatter(mu_x0.squeeze(),mu_x2.squeeze(),alpha=0.2)
+plt.show()
 
 
 
-# print('TEST Isotropic Gaussian Mixture Model')
-# from IsotropicGaussianMixtureModel import IsotropicGaussianMixtureModel as GMM
-# dim = 2
-# nc = 4
-# nb = 10
-# mu = torch.randn(4,2)*4  
-# A = torch.randn(4,2,2)/np.sqrt(2)
 
-# num_samples = 200
-# data = torch.zeros(num_samples,2)
+print('Test Autoregressive Hidden Markov Model Variants...')
+print('TEST Vanilla ARHMM')
+from ARHMM import *
 
-# for i in range(num_samples):
-#     data[i,:] = mu[i%4,:] + A[i%4,:,:]@torch.randn(2) + torch.randn(2)/8.0
+dim =6
+batch_dim = 7
+hidden_dim = 5
+T = 100
+num_samples = 200
+sample_shape = (T,num_samples)
 
+A = torch.rand(hidden_dim,hidden_dim)+4*torch.eye(hidden_dim)
+A = A/A.sum(-1,keepdim=True)
+B = torch.randn(hidden_dim,dim)
 
-# #data = data-data.mean(0,True)
-# #data = data/data.std(0,True)
-# nc = 6
+z=torch.rand(T,num_samples,hidden_dim).argmax(-1)
+y = torch.randn(T,num_samples,dim)
+for t in range(1,T):
+    z[t]=(A[z[t-1]].log() + torch.randn(1,num_samples,hidden_dim)).argmax(-1)
+    y[t]= B[z[t]] + torch.randn(num_samples,dim)/5.0
 
-# gmm = GMM(nc,dim)
-# gmm.update(data.unsqueeze(-2),20,1,verbose=True)
-# plt.scatter(data[:,0],data[:,1],c=gmm.assignment())
-# plt.show()
+Y=y[:,:,0:2]
+X=y[:,:,2:5]
 
-# print('Isotropic GMM TEST COMPLETE')
+X=X.unsqueeze(-2).unsqueeze(-1)
+Y=Y.unsqueeze(-2).unsqueeze(-1)
 
+XY = (X,Y)
+model = ARHMM(5,2,3)
+model.update(XY,iters=20,lr=1,verbose=True)
+loc= model.ELBO().argmax()
 
-# print('TEST HMM')
-# from HMM import HMM
-# print("TEST VANILLA HMM")
-# dim =6
-# hidden_dim = 5
-# T = 100
-# num_samples = 199
-# sample_shape = (T,num_samples)
-
-# A = torch.rand(hidden_dim,hidden_dim)+4*torch.eye(hidden_dim)
-# A = A/A.sum(-1,keepdim=True)
-# B = torch.randn(hidden_dim,dim)
-
-# z=torch.rand(T,num_samples,hidden_dim).argmax(-1)
-# y = torch.randn(T,num_samples,dim)
-# for t in range(1,T):
-#     z[t]=(A[z[t-1]].log() + torch.randn(1,num_samples,hidden_dim)).argmax(-1)
-#     y[t]= B[z[t]] + torch.randn(num_samples,dim)/5.0
-
-# from dists.NormalInverseWishart import NormalInverseWishart
-# lambda_mu_0 = torch.ones(hidden_dim)
-# mu_0 = torch.zeros(hidden_dim,dim)
-# nu_0 = torch.ones(hidden_dim)*(dim+2)
-# invSigma_0 = torch.zeros(hidden_dim,dim,dim)+torch.eye(dim)
-
-# obs_dist = NormalInverseWishart(lambda_mu_0, mu_0, nu_0, invSigma_0)
-# model = HMM(obs_dist)  
-# model.update(y.unsqueeze(-2),20,lr=1,verbose=True)
+plt.plot(model.p[:,0,:].data)
+plt.plot(z[:,0].data-hidden_dim/2.0)
+plt.show()
 
 
-# print('TEST BATCH OF HMMS')
-# batch_size = 10
-# lambda_mu_0 = torch.ones(batch_size,hidden_dim)
-# mu_0 = torch.zeros(batch_size,hidden_dim,dim)
-# nu_0 = torch.ones(batch_size,hidden_dim)*(dim+2)
-# invSigma_0 = torch.zeros(batch_size,hidden_dim,dim,dim)+torch.eye(dim)
-# obs_dist = NormalInverseWishart(lambda_mu_0, mu_0, nu_0, invSigma_0)
+print('Test ARHMM prXY')
+from dists import Delta
+model = ARHMM_prXY(5,2,3)
 
-# model = HMM(obs_dist)  
-# model.update(y.unsqueeze(-2).unsqueeze(-2),10,verbose=True)
+pX = Delta(X)
+pY = Delta(Y)
+pXY = (pX,pY)
+model.update(pXY,iters=20,lr=1,verbose=True)
 
-# ELBO = model.ELBO()
-# loc = ELBO.argmax()
-# print(ELBO - ELBO[loc])
-# plt.scatter(y[:,0,0],y[:,0,1],c=model.assignment()[:,0,loc])
-# plt.show()
-# plt.plot(model.p[:,0,loc,:].data)
-# plt.plot(z[:,0].data-hidden_dim/2.0)
-# plt.show()
+plt.plot(model.p[:,0,:].data)
+plt.plot(z[:,0].data-hidden_dim/2.0)
+plt.show()
+
+Y = Y.unsqueeze(-4)
+X = X.unsqueeze(-4)
+pX = Delta(X)
+pY = Delta(Y)
+pXY = (pX,pY)
+
+print('Test batch of ARHMM prXY')
+
+model = ARHMM_prXY(5,2,3,batch_shape=(batch_dim,))
+model.update(pXY,iters=20,lr=1,verbose=True)
+loc= model.ELBO().argmax()
+plt.plot(model.p[:,0,loc,:].data)
+plt.plot(z[:,0].data-hidden_dim/2.0)
+plt.show()
+
+print('Test ARHMM prXRY')
+from dists import MultivariateNormal_vector_format
+from dists import Delta
+dim =6
+rdim=2
+xdim=3
+batch_dim = 0
+hidden_dim = 5
+T = 100
+num_samples = 200
+sample_shape = (T,num_samples)
+
+A = torch.rand(hidden_dim,hidden_dim)+4*torch.eye(hidden_dim)
+A = A/A.sum(-1,keepdim=True)
+B = torch.randn(hidden_dim,xdim,dim)
+C = torch.randn(hidden_dim,rdim,dim)
+
+z=torch.rand(T,num_samples,hidden_dim).argmax(-1)
+r = torch.randn(T,num_samples,rdim)
+x = torch.randn(T,num_samples,xdim)
+y = torch.randn(T,num_samples,dim)
+for t in range(1,T):
+    z[t]=(A[z[t-1]].log() + torch.randn(1,num_samples,hidden_dim)).argmax(-1)
+    y[t]= (x[t].unsqueeze(-2)@B[z[t]]).squeeze(-2) + (r[t].unsqueeze(-2)@C[z[t]]).squeeze(-2) + torch.randn(num_samples,dim)/5.0
+
+x=x.unsqueeze(-1).unsqueeze(-3)
+pX = MultivariateNormal_vector_format(mu=x, Sigma = torch.zeros(x.shape[:-1] + (xdim,))+torch.eye(xdim)/10)
+model = ARHMM_prXRY(5,dim,xdim,rdim,batch_shape=())
+pXRY = (pX,r.unsqueeze(-1).unsqueeze(-3),Delta(y.unsqueeze(-1).unsqueeze(-3)))
+model.update(pXRY,iters=20,lr=1,verbose=True)
+print('ARHMM TEST COMPLETE')
 
 
-# print('TEST non-trivial event_dim')
+print('TEST Gaussian Mixture Model')
+from GaussianMixtureModel import GaussianMixtureModel as GMM
+dim = 2
+nc = 4
+nb = 10
+mu = torch.randn(4,2)*4  
+A = torch.randn(4,2,2)/np.sqrt(2)
 
-# dim =6
-# hidden_dim = 5
-# T = 100
-# num_samples = 199
-# sample_shape = (T,num_samples)
+num_samples = 200
+data = torch.zeros(num_samples,2)
 
-# A = torch.rand(hidden_dim,hidden_dim)+4*torch.eye(hidden_dim)
-# A = A/A.sum(-1,keepdim=True)
-# B = torch.randn(hidden_dim,dim)
-
-# z=torch.rand(T,num_samples,hidden_dim).argmax(-1)
-# y = torch.randn(T,num_samples,dim)
-# for t in range(1,T):
-#     z[t]=(A[z[t-1]].log() + torch.randn(1,num_samples,hidden_dim)).argmax(-1)
-#     y[t]= B[z[t]] + torch.randn(num_samples,dim)/5.0
+for i in range(num_samples):
+    data[i,:] = mu[i%4,:] + A[i%4,:,:]@torch.randn(2) + torch.randn(2)/8.0
 
 
-# y = y.reshape(T,num_samples,3,2)
+#data = data-data.mean(0,True)
+#data = data/data.std(0,True)
+nc = 6
 
-# batch_size = 3
-# dim = 2
-# lambda_mu_0 = torch.ones(hidden_dim,batch_size)
-# mu_0 = torch.zeros(hidden_dim,batch_size,dim)
-# nu_0 = torch.ones(hidden_dim,batch_size)*(dim+2)
-# invSigma_0 = torch.zeros(hidden_dim,batch_size,dim,dim)+torch.eye(dim)
-# obs_dist = NormalInverseWishart(lambda_mu_0, mu_0, nu_0, invSigma_0).to_event(1)
+gmm = GMM(nc,dim)
+gmm.update(data.unsqueeze(-2),20,1,verbose=True)
+plt.scatter(data[:,0],data[:,1],c=gmm.assignment())
+plt.show()
 
-# model = HMM(obs_dist)  
-# model.update(y.unsqueeze(-3),10,verbose=True)
+print('GMM TEST COMPLETE')
 
 
-# y = y.reshape(T,num_samples,6)
-# plt.scatter(y[:,0,0],y[:,0,1],c=model.assignment()[:,0])
-# plt.show()
-# plt.plot(model.p[:,0,:].data)
-# plt.plot(z[:,0].data-hidden_dim/2.0)
-# plt.show()
+
+print('TEST Isotropic Gaussian Mixture Model')
+from IsotropicGaussianMixtureModel import IsotropicGaussianMixtureModel as GMM
+dim = 2
+nc = 4
+nb = 10
+mu = torch.randn(4,2)*4  
+A = torch.randn(4,2,2)/np.sqrt(2)
+
+num_samples = 200
+data = torch.zeros(num_samples,2)
+
+for i in range(num_samples):
+    data[i,:] = mu[i%4,:] + A[i%4,:,:]@torch.randn(2) + torch.randn(2)/8.0
+
+
+#data = data-data.mean(0,True)
+#data = data/data.std(0,True)
+nc = 6
+
+gmm = GMM(nc,dim)
+gmm.update(data.unsqueeze(-2),20,1,verbose=True)
+plt.scatter(data[:,0],data[:,1],c=gmm.assignment())
+plt.show()
+
+print('Isotropic GMM TEST COMPLETE')
+
+
+print('TEST HMM')
+from HMM import HMM
+print("TEST VANILLA HMM")
+dim =6
+hidden_dim = 5
+T = 100
+num_samples = 199
+sample_shape = (T,num_samples)
+
+A = torch.rand(hidden_dim,hidden_dim)+4*torch.eye(hidden_dim)
+A = A/A.sum(-1,keepdim=True)
+B = torch.randn(hidden_dim,dim)
+
+z=torch.rand(T,num_samples,hidden_dim).argmax(-1)
+y = torch.randn(T,num_samples,dim)
+for t in range(1,T):
+    z[t]=(A[z[t-1]].log() + torch.randn(1,num_samples,hidden_dim)).argmax(-1)
+    y[t]= B[z[t]] + torch.randn(num_samples,dim)/5.0
+
+from dists.NormalInverseWishart import NormalInverseWishart
+lambda_mu_0 = torch.ones(hidden_dim)
+mu_0 = torch.zeros(hidden_dim,dim)
+nu_0 = torch.ones(hidden_dim)*(dim+2)
+invSigma_0 = torch.zeros(hidden_dim,dim,dim)+torch.eye(dim)
+
+obs_dist = NormalInverseWishart(lambda_mu_0, mu_0, nu_0, invSigma_0)
+model = HMM(obs_dist)  
+model.update(y.unsqueeze(-2),20,lr=1,verbose=True)
+
+
+print('TEST BATCH OF HMMS')
+batch_size = 10
+lambda_mu_0 = torch.ones(batch_size,hidden_dim)
+mu_0 = torch.zeros(batch_size,hidden_dim,dim)
+nu_0 = torch.ones(batch_size,hidden_dim)*(dim+2)
+invSigma_0 = torch.zeros(batch_size,hidden_dim,dim,dim)+torch.eye(dim)
+obs_dist = NormalInverseWishart(lambda_mu_0, mu_0, nu_0, invSigma_0)
+
+model = HMM(obs_dist)  
+model.update(y.unsqueeze(-2).unsqueeze(-2),10,verbose=True)
+
+ELBO = model.ELBO()
+loc = ELBO.argmax()
+print(ELBO - ELBO[loc])
+plt.scatter(y[:,0,0],y[:,0,1],c=model.assignment()[:,0,loc])
+plt.show()
+plt.plot(model.p[:,0,loc,:].data)
+plt.plot(z[:,0].data-hidden_dim/2.0)
+plt.show()
+
+
+print('TEST non-trivial event_dim')
+
+dim =6
+hidden_dim = 5
+T = 100
+num_samples = 199
+sample_shape = (T,num_samples)
+
+A = torch.rand(hidden_dim,hidden_dim)+4*torch.eye(hidden_dim)
+A = A/A.sum(-1,keepdim=True)
+B = torch.randn(hidden_dim,dim)
+
+z=torch.rand(T,num_samples,hidden_dim).argmax(-1)
+y = torch.randn(T,num_samples,dim)
+for t in range(1,T):
+    z[t]=(A[z[t-1]].log() + torch.randn(1,num_samples,hidden_dim)).argmax(-1)
+    y[t]= B[z[t]] + torch.randn(num_samples,dim)/5.0
+
+
+y = y.reshape(T,num_samples,3,2)
+
+batch_size = 3
+dim = 2
+lambda_mu_0 = torch.ones(hidden_dim,batch_size)
+mu_0 = torch.zeros(hidden_dim,batch_size,dim)
+nu_0 = torch.ones(hidden_dim,batch_size)*(dim+2)
+invSigma_0 = torch.zeros(hidden_dim,batch_size,dim,dim)+torch.eye(dim)
+obs_dist = NormalInverseWishart(lambda_mu_0, mu_0, nu_0, invSigma_0).to_event(1)
+
+model = HMM(obs_dist)  
+model.update(y.unsqueeze(-3),10,verbose=True)
+
+
+y = y.reshape(T,num_samples,6)
+plt.scatter(y[:,0,0],y[:,0,1],c=model.assignment()[:,0])
+plt.show()
+plt.plot(model.p[:,0,:].data)
+plt.plot(z[:,0].data-hidden_dim/2.0)
+plt.show()
 
 
 
@@ -468,7 +520,9 @@ print('LDS MIXTURE TEST COMPLETE')
 
 
 print('TEST MIXTURE of Linear Transforms')
-
+import torch
+import numpy as np
+import matplotlib.pyplot as plt
 from MixtureofLinearTransforms import *
 nc=3
 dim =3
@@ -561,77 +615,70 @@ print('Percent Correct   = ',((Y.argmax(-1)==psb.argmax(-1)).sum()/Y.shape[0]).d
 print('Percent Correct_2 = ',((Y.argmax(-1)==psb2.argmax(-1)).sum()/Y.shape[0]).data*100)
 
 
-print('TEST NL REGRESSION Batched')
+print('TEST NL REGRESSION')
 
 import time
 import torch
 import numpy as np
 from matplotlib import pyplot as plt
 from NLRegression import * 
+from NLRegression_Multinomial import *
+from dMixtureofLinearTransforms import *
+from MixtureofLinearTransforms import *
 
 n=1
 p=10
-hidden_dim = 1
-nc =  10
-num_samps=400
+hidden_dim = 2
+nc =  20
+num_samps=800
+batch_shape = ()
 t=time.time()
-model = NLRegression_low_rank(n,p,hidden_dim,nc,batch_shape=(10,))
-model2 = NLRegression_full_rank(n,p,nc,batch_shape=(10,))
 X = 4*torch.rand(num_samps,p)-2
 Y = torch.randn(num_samps,n)
-W_true = 3.0*torch.randn(p,n)/np.sqrt(p)
+W_true = 5.0*torch.randn(p,n)/np.sqrt(p)
 
-Y = (X@W_true/2).sin() + torch.randn(num_samps,1)/10.0*0
+Y = (X@W_true).tanh() + torch.randn(num_samps,1)/10.0*0
 
 X=X/X.std()
 Y=Y/Y.std()
 Y=Y-Y.mean()
 
-model.raw_update(X,Y,40,1)
-print(time.time()-t)
+model0 = NLRegression_low_rank(n,p,hidden_dim,nc,batch_shape=batch_shape)
+model1 = NLRegression_full_rank(n,p,nc,batch_shape=batch_shape)
+model2 = dMixtureofLinearTransforms(n,p,nc,batch_shape=batch_shape,pad_X=True)
+model3 = NLRegression_Multinomial(n,p,nc,batch_shape=batch_shape)
+models = (model0,model1,model2,model3)
+predictions = []
+inference_cost=[]
+prediction_cost=[]
 
-loc = model.ELBO().argmax(0)
+for k, model in enumerate(models):
+    print('Training Model ',k)
+    t= time.time()
+    if(k==4):
+        model.raw_update((X,Y),iters = 40,lr=1)
+    else:
+        model.raw_update(X,Y,iters = 40,lr=1)
+    inference_cost.append(time.time()-t)
+    t= time.time()
+    predictions.append(model.forward(X)[0])
+    prediction_cost.append(time.time()-t)
+
+
+print('inference_cost = ',inference_cost)
+print('prediction_cost = ',prediction_cost)
+label = ['Low Rank','Full Rank','dMix','NL Multinomial','Mix Linear']
 
 
 U_true = X@W_true
 U_true = U_true/U_true.std(0,True)
-
-U = (model.W.EXTinvU()[loc]@X.unsqueeze(-1)).squeeze(-1)
-Ubar = model.U.mean()[loc].squeeze(-1)/U.std(0,True)
-U = U/U.std(0,True)
-
-Yhat, Yerr, pr, u_hat = model.predict(X)
-Yerr = 2*Yerr.diagonal(dim1=-2,dim2=-1).sqrt()
-u_hat = u_hat[:,loc,:]
-u_hat = u_hat/u_hat.std(0,True)
-
-plt.scatter(U_true[:,0],Y[:,0],c='black')
-plt.scatter(U_true[:,0],Yhat[:,loc,0],c=pr[:,loc,:].argmax(-1).data)
-plt.show()
-
-plt.scatter(U_true[:,0],Y[:,0],c='black')
-plt.scatter(U[:,0],Yhat[:,loc,0],c=pr[:,loc,:].argmax(-1).data)
-#plt.errorbar(U_true[:,0],Yhat[:,loc,0],yerr = Yerr[:,loc,0], fmt='.')
+plt.scatter(U_true,Y,c='black')
+for k, pred in enumerate(predictions):
+    plt.scatter(U_true,pred[...,0],alpha=0.5)
+plt.legend(['True']+label)
 plt.show()
 
 
-print('Test Multinomial NL Regression')
-from NLRegression_Multinomial import *
-n=1
-p=10
-nc=8
-num_samps = 1000
-X=torch.randn(num_samps,p)
-W = torch.randn(p,n)/np.sqrt(p)
-U = X@W
-Y=4.0*(2*U).tanh()
-
-model0 = NLRegression_Multinomial(n,p,nc,pad_X=True)
-model0.raw_update(X,Y,iters=20,lr=1,verbose=True)
-Yhat0 = model0.predict(X)[0].squeeze(-1)
-plt.scatter(U,Y,c='k',alpha=0.5)
-plt.scatter(U,Yhat0,c='r',alpha=0.5)
-plt.show()
 
 print('Test Tensor Normal Wishart')
 from dists import TensorNormalWishart

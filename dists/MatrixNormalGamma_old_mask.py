@@ -1,5 +1,6 @@
 # Variational Bayesian Expectation Maximization for linear regression and mixtures of linear models
 # with Gaussian observations 
+
 import torch
 import numpy as np
 from .DiagonalWishart import DiagonalWishart
@@ -13,11 +14,9 @@ class MatrixNormalGamma():
     # V is assumed to be p x p and plays the role of lambda for the normal wishart prior
     # invU is n x n diagonal matrix with diagonal elements assumed to be gamma distributed
     # i.e.  Y = A @ X + U^{-1/2} @ eps, where A is the random variable represented by the MNW prior
-    # When used for linear regression, either zscore X and Y or pad X with a column of ones
-    #   mask is a boolean tensor of shape mu_0 that indicates which entries of mu can be non-zero
-    #         mask must be the same for all elements of a given batch, i.e. it is n x p 
-    #   X_mask is a boolean tensor of shape (mu_0.shape[:-2] + (1,) + mu_shape[-1:]) 
-    #           that indicates which entries of X contribute to the prediction 
+    # Note that under this assumption MatrixNormalGamma is the same as a batch of n normal inverse Wishart 
+    # distributions.  The reasons to use MatrixNormalGamma is that it removes the redundancy that results 
+    # from the fact that the invU is now trivially calcuable
 
     def __init__(self,mu_0,U_0=None,V_0=None,uniform_precision=False,mask=None,X_mask=None,pad_X=False):
         self.n = mu_0.shape[-2]
@@ -47,27 +46,24 @@ class MatrixNormalGamma():
         self.mask = mask
         self.X_mask = X_mask
         self.mu_0 = mu_0
-        self.mu = 0.1*torch.randn(mu_0.shape,requires_grad=False)/np.sqrt(self.n*self.p)+mu_0
-        self.invV_0 = V_0.inverse()
-        self.V = V_0
-        self.invV = self.invV_0
-        self.invU = DiagonalWishart(2*torch.ones(U_0.shape,requires_grad=False),2*U_0)
-        self.logdetinvV = self.invV.logdet()    
-        self.logdetinvV_0=self.invV_0.logdet()    
-
-        if X_mask is not None:
-            if pad_X:
-                self.X_mask = torch.cat((X_mask,torch.ones(X_mask.shape[:-1]+(1,),requires_grad=False)>0),dim=-1)
-            self.mu_0 = self.mu_0*self.X_mask
-            self.mu = self.mu*self.X_mask
-            self.V = self.V*self.X_mask*self.X_mask.transpose(-2,-1)
-            self.invV = self.invV*self.X_mask*self.X_mask.transpose(-2,-1)
+        self.mu = torch.randn(mu_0.shape,requires_grad=False)/np.sqrt(self.n*self.p)+mu_0
 
         if mask is not None:
             if pad_X:
                 self.mask = torch.cat((self.mask,torch.ones(self.mask.shape[:-1]+(1,),requires_grad=False)>0),dim=-1)
             self.mu_0 = self.mu_0*self.mask
             self.mu = self.mu*self.mask
+        if X_mask is not None:
+            if pad_X:
+                self.X_mask = torch.cat((self.X_mask,torch.ones(self.X_mask.shape[:-1]+(1,),requires_grad=False)>0),dim=-1)
+            V_0 = V_0*((torch.eye(self.p,requires_grad=False)>0)+self.X_mask.unsqueeze(-1)*self.X_mask.unsqueeze(-2))
+        self.invV_0 = V_0.inverse()
+        self.V = V_0
+        self.invV = self.invV_0
+        self.invU = DiagonalWishart(2*torch.ones(U_0.shape,requires_grad=False),2*U_0)
+
+        self.logdetinvV = self.invV.logdet()    
+        self.logdetinvV_0=self.invV_0.logdet()    
 
     def to_event(self,n):
         if n == 0:
@@ -80,54 +76,31 @@ class MatrixNormalGamma():
         return self
 
     def ss_update(self,SExx,SEyx,SEyy,n,lr=1.0):
-
+        # Assumes that SEyy is batch x event x event
         if self.X_mask is not None:
-            SExx = SExx*self.X_mask*self.X_mask.transpose(-2,-1)
-            SEyx = SEyx*self.X_mask
-            invV = self.invV_0 + SExx
-            muinvV = self.mu_0@self.invV_0 + SEyx
-            mu = muinvV@invV.inverse()
-            mu = mu*self.X_mask
-        else:
-            invV = self.invV_0 + SExx
-            muinvV = self.mu_0@self.invV_0 + SEyx
-            mu = torch.linalg.solve(invV,muinvV.transpose(-2,-1)).transpose(-2,-1)
-            # mu = (muinvV@invV.inverse())
-
-        if self.mask is not None:  # Assumes mask is same for whole batch
-            V = invV.inverse()
-            U = self.invU.EinvSigma().inverse()
-            Astar = V.unsqueeze(-3).unsqueeze(-2)*U.unsqueeze(-2).unsqueeze(-1)
-            A  = Astar[...,~self.mask,:,:][...,:,~self.mask]            
-            b = mu[...,~self.mask]
-            gamma = torch.zeros_like(mu)
-            gamma[...,~self.mask] = torch.linalg.solve(A,b)
-            mu = mu - U@gamma@V
-            mu = mu*self.mask
-
-        SEyy = SEyy - mu@invV@mu.transpose(-2,-1)
+            SExx = SExx*self.X_mask.unsqueeze(-1)*self.X_mask.unsqueeze(-2)
+            SEyx = SEyx*self.X_mask.unsqueeze(-2)
+        invV = self.invV_0 + SExx
+        muinvV = self.mu_0@self.invV_0 + SEyx
+        mu = torch.linalg.solve(invV,muinvV.transpose(-2,-1)).transpose(-2,-1)
+#        mu = (muinvV@invV.inverse())
+        SEyy = SEyy - (muinvV@mu.transpose(-2,-1))
         SEyy = SEyy + (self.mu_0@self.invV_0@self.mu_0.transpose(-2,-1))
-        self.invU.ss_update(SEyy.diagonal(dim1=-2,dim2=-1), n.unsqueeze(-1), lr)
+
         self.invV = (invV-self.invV)*lr + self.invV
         self.invV = 0.5*(self.invV + self.invV.transpose(-2,-1))
-        self.mu = (mu-self.mu)*lr + self.mu
-        if(self.mask is not None):
-            self.mu = self.mu*self.mask
-
 #        self.invV_d, self.invV_v = torch.linalg.eigh(self.invV) 
 #        self.V = self.invV_v@(1.0/self.invV_d.unsqueeze(-1)*self.invV_v.transpose(-2,-1))
 #        self.logdetinvV = self.invV_d.log().sum(-1)
         self.V = self.invV.inverse()
         self.logdetinvV = self.invV.logdet()
 
-        if self.X_mask is not None:
-            self.V = self.V * self.X_mask * self.X_mask.transpose(-2,-1)
-            self.invV = self.invV * self.X_mask * self.X_mask.transpose(-2,-1)
-            self.mu = self.mu*self.X_mask
-            self.logdetinvV = self.logdetinvV - self.logdetinvV_0*(~self.X_mask).sum(-1).sum(-1)
-
+        self.invU.ss_update(SEyy.diagonal(dim1=-2,dim2=-1), n.unsqueeze(-1), lr)
         if self.uniform_precision==True:
             self.invU.gamma.alpha = self.invU.gamma.alpha.sum(-1,keepdim=True)  # THIS IS A HACK
+        self.mu = (mu-self.mu)*lr + self.mu
+        if(self.mask is not None):
+            self.mu = self.mu*self.mask
 
     def update(self,pX,pY,p=None,lr=1.0):
 
@@ -221,9 +194,7 @@ class MatrixNormalGamma():
     def KLqprior(self):
 
         KL = self.n/2.0*self.logdetinvV - self.n/2.0*self.logdetinvV_0 - self.n*self.p/2.0
-        if self.X_mask is not None:
-            KL = KL + self.n/2.0*self.logdetinvV_0*(self.X_mask).sum(-1).sum(-1)
-        KL = KL + 0.5*self.n*(self.invV_0*self.V).sum(-1).sum(-1)
+        KL = KL + 0.5*self.n*(self.invV_0@self.V).sum(-1).sum(-1)
         temp = (self.mu-self.mu_0).transpose(-2,-1)@(self.invU.gamma.mean().unsqueeze(-1)*(self.mu-self.mu_0))
         KL = KL + 0.5*(self.invV_0*temp).sum(-1).sum(-1)
 

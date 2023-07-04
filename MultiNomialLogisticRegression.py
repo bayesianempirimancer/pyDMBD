@@ -15,14 +15,13 @@ class MultiNomialLogisticRegression():
     # It is assumed that X is a matrix of size (sample x batch x p)  and Y is either probabilities or 
     # a one hot tensor or a number of counts but must have tensor size = (sample x batch x n) 
     def __init__(self,n,p,batch_shape = (),pad_X=True):
-        print('Works but missing some features')
 
         if pad_X == True:
             p = p+1
         n=n-1
         self.n=n
         self.p=p
-        self.beta = MVN_ard(p,batch_shape=batch_shape + (n,))
+        self.beta = MVN_ard(p,batch_shape=batch_shape + (n,)).to_event(1)
         self.beta.mu = self.beta.mu/np.sqrt(self.p)
         self.pad_X = pad_X               
         self.batch_shape = batch_shape
@@ -31,7 +30,17 @@ class MultiNomialLogisticRegression():
         self.event_dim = 2
         self.ELBO_last = torch.tensor(-torch.inf)
     
-    def raw_update(self,X,Y,iters = 1, p=None,lr=1,verbose=True):
+    def to_event(self,n):
+        if n < 1:
+            return self
+        self.event_dim = self.event_dim + n
+        self.batch_dim = self.batch_dim - n
+        self.event_shape = self.batch_shape[-n:] + self.event_shape
+        self.batch_shape = self.batch_shape[:-n]
+        self.beta.to_event(n)        
+        return self
+
+    def raw_update(self,X,Y,iters = 1, p=None,lr=1.0,verbose=False):
         # Assumes X is sample x batch x p and Y is sample x batch x n
         ELBO = self.ELBO_last
         if self.pad_X is True:
@@ -40,56 +49,87 @@ class MultiNomialLogisticRegression():
         YmN = Y-N/2.0   
         pgb = N[...,:-1]
         YmN = YmN[...,:-1]
-        X = X.unsqueeze(-1).unsqueeze(-3)  # expands to sample x batch x  p x 1
-        SEyx = (YmN.view(YmN.shape + (1,1))*X).sum(0)  # sample x batch x n x p 
+        SEyx = (YmN.view(YmN.shape+ (1,1))*X.view(X.shape[:-1]+ (1,) + X.shape[-1:] + (1,))).sum(0)  
         while SEyx.ndim > self.event_dim + self.batch_dim + 1:
-            SEyx = SEyx.sum(0) 
+            SEyx = SEyx.sum(0) # output has shape:  batch x n x p x 1
 
+        X = X.view(X.shape[:-1] + (1,) + X.shape[-1:] + (1,))
         for i in range(iters):
-            pgc = (X*(self.beta.EXXT()@X)).sum(-2).squeeze(-1).sqrt()  # should have shape (sample x batch x n)
-            Ew = pgb/2.0/pgc*(pgc/2.0).tanh()
+            pgc = (X*(self.beta.EXXT()@X)).sum(-2).squeeze(-1).sqrt()  # shape = (sample x batch x n)
+            Ew = pgb/2.0/pgc*(pgc/2.0).tanh()                          # shape = (sample x batch x n)
 
             SExx =  (Ew.view(Ew.shape + (1,1))*X*X.transpose(-2,-1)).sum(0)  # sample x batch x n x p x p 
             while SExx.ndim > self.event_dim + self.batch_dim + 1:
                 SExx = SExx.sum(0)
             
             ELBO_last = ELBO
-            ELBO = (SEyx*self.beta.mean()).sum() - (pgb*(0.5*pgc).cosh().log()).sum() - pgb.sum()*np.log(2) - self.KLqprior()
+            ELBO = (SEyx*self.beta.mean()).sum() - (pgb*(0.5*pgc).cosh().log()).sum() - pgb.sum()*np.log(2) - self.KLqprior().sum()
             self.ELBO_last = ELBO
             if verbose is True: print("Percent Change in ELBO: ",((ELBO-ELBO_last)/ELBO_last.abs()*100).data)
 
             self.beta.ss_update(SExx,SEyx,lr=lr)
 
-
-    def update(self,pX,pY,iters=1,p=None,lr=1,verbose=True):
-
+    def update(self,pX,pY,iters=1,p=None,lr=1,verbose=True):  
+        # Here pX is assumed to be a probability distribution that has supports EXXT()
         ELBO = self.ELBO_last
-        if self.pad_X is True:
-            X = torch.cat((X,torch.ones(X.shape[:-1]+(1,))),dim=-1)
         N = pY.sum(-1,True)-(pY.cumsum(-1)-pY)
         YmN = pY-N/2.0   
         pgb = N[...,:-1]
         YmN = YmN[...,:-1]
+        YmN = YmN.view(YmN.shape + (1,1))   # expands to sample x batch x n x 1 x 1
 
-        X = pX.mean(0).unsqueeze(-3)
-        EXXT = pX.EXXT().unsqueeze(-3)
-        SEyx = (YmN.view(YmN.shape + (1,1))*X).sum(0)  # sample x batch x n x p 
+        EXXT = pX.EXXT().unsqueeze(-3)  # sample x batch x 1 x p x p 
+        EX = pX.mean().unsqueeze(-3)    # sample x batch x 1 x p x 1
+        if self.pad_X is True:
+            EXXT = torch.cat((EXXT,EX),dim=-1) 
+            EX = torch.cat((EX,torch.ones(EX.shape[:-2]+(1,1))),dim=-2)
+            EXXT = torch.cat((EXXT,EX.transpose(-2,-1)),dim=-2)
+        
+        SEyx = (YmN*EX).sum(0)  
         while SEyx.ndim > self.event_dim + self.batch_dim + 1:
-            SEyx = SEyx.sum(0) 
+            SEyx = SEyx.sum(0) # output has shape:  batch x n x p x 1
 
         for i in range(iters):
-            pgc = (EXXT*(self.beta.EXXT())).sum(-1).sum(-1).sqrt()  # should have shape (sample x batch x n)
-            Ew = pgb/2.0/pgc*(pgc/2.0).tanh()
+            pgc = (self.beta.EXXT()*EXXT).sum(-1).sum(-1).sqrt()  # shape = (sample x batch x n)
+            Ew = pgb/2.0/pgc*(pgc/2.0).tanh()                     # shape = (sample x batch x n)
 
-            SExx =  (Ew.view(Ew.shape + (1,1))*EXXT).sum(0)  # sample x batch x n x p x p 
+            SExx =  (Ew.view(Ew.shape + (1,1))*EXXT).sum(0)   
             while SExx.ndim > self.event_dim + self.batch_dim + 1:
-                SExx = SExx.sum(0)
+                SExx = SExx.sum(0)  # results in batch x n x p x p
             
             ELBO_last = ELBO
             ELBO = (SEyx*self.beta.mean()).sum() - (pgb*(0.5*pgc).cosh().log()).sum() - pgb.sum()*np.log(2) - self.KLqprior()
             self.ELBO_last = ELBO
             if verbose is True: print("Percent Change in ELBO: ",((ELBO-ELBO_last)/ELBO_last.abs()*100).data)
+
             self.beta.ss_update(SExx,SEyx,lr=lr)
+
+
+    def forward(self, pX):
+        sample_shape = pX.mean().shape[:-2]
+        Yt = torch.eye(self.n+1)
+        for i in range(len(sample_shape)):
+            Yt = Yt.unsqueeze(-2)
+
+        N = Yt.sum(-1,True)-(Yt.cumsum(-1)-Yt)
+        YmN = Yt-N/2.0   # should have shape (sample x batch x n) 
+                        # X has sample x batch x p         
+        # Remove Superfluous final dimension of Y and N
+        pgb = N[...,:-1]
+        YmN = YmN[...,:-1]
+
+        EXXT = pX.EXXT().unsqueeze(-3)  # sample x batch x 1 x p x p 
+        EX = pX.mean().unsqueeze(-3)    # sample x batch x 1 x p x 1
+        if self.pad_X is True:
+            EXXT = torch.cat((EXXT,EX),dim=-1) 
+            EX = torch.cat((EX,torch.ones(EX.shape[:-2]+(1,1))),dim=-2)
+            EXXT = torch.cat((EXXT,EX.transpose(-2,-1)),dim=-2)
+        
+        SEyxb = (YmN.view(YmN.shape+(1,1))*EX*self.beta.mean()).sum(-1).sum(-1)  
+
+        pgc = (self.beta.EXXT()*EXXT).sum(-1).sum(-1).sqrt()  # shape = (sample x batch x n)        
+        out = SEyxb.sum(-1) - (pgb*(0.5*pgc).cosh().log()).sum(-1) - pgb.sum(-1)*np.log(2.0)
+        return  out.movedim(0,-1)  # returns log probability sample x batch x 
 
 
     def ELBO(self,X=None,Y=None):
@@ -99,7 +139,32 @@ class MultiNomialLogisticRegression():
             return self.ELBO_last
     
     def KLqprior(self):
-        return self.beta.KLqprior().sum(-1)
+        KL = self.beta.KLqprior()
+        for i in range(self.event_dim-2):
+            KL = KL.sum(-1)
+        return KL
+
+    def Elog_like_pX(self,pX,Y):  # assumes pX is in vector format
+        if self.pad_X is True:
+            EX = pX.mean()
+            EXXT = torch.cat((pX.EXXT(),EX),dim=-1)
+            EX = torch.cat((EX,torch.ones(EX.shape[:-2]+(1,1))),dim=-2)
+            EXXT = torch.cat((EXXT,EX.transpose(-2,-1)),dim=-2)
+        else:
+            EX = pX.mean()
+            EXXT = pX.EXXT()
+        N = Y.sum(-1,True)-(Y.cumsum(-1)-Y)
+        YmN = Y-N/2.0   # should have shape (sample x batch x n) 
+                        # X has sample x batch x n         
+        # Remove Superfluous final dimension of Y and N
+        pgb = N[...,:-1]
+        YmN = YmN[...,:-1]
+        EX = EX.unsqueeze(-3)  
+        EXXT = EXXT.unsqueeze(-3)
+        SEyxb = (YmN.unsqueeze(-1)*EX.squeeze(-1)*self.beta.mean().squeeze(-1)).sum(-1)
+        pgc = (EXXT*self.beta.EXXT()).sum(-1).sum(-1).sqrt()  # should have shape (sample x batch x n)
+        return SEyxb.sum(-1) - (pgb*(0.5*pgc).cosh().log()).sum(-1) - pgb.sum(-1)*np.log(2.0)
+
 
     def Elog_like(self,X,Y):
         if self.pad_X is True:
@@ -111,12 +176,19 @@ class MultiNomialLogisticRegression():
         pgb = N[...,:-1]
         YmN = YmN[...,:-1]
         X = X.unsqueeze(-2)  # expands to sample x batch x  p x 1
+
         SEyxb = (YmN.unsqueeze(-1)*X*self.beta.mean().squeeze(-1)).sum(-1)
         X = X.unsqueeze(-1)
         pgc = (X*(self.beta.EXXT()@X)).sum(-2).squeeze(-1).sqrt()  # should have shape (sample x batch x n)
         return SEyxb.sum(-1) - (pgb*(0.5*pgc).cosh().log()).sum(-1) - pgb.sum(-1)*np.log(2.0)
 
-    def Elog_like_X(self,pY, iters=2):
+    def backward(self,like_X,pY):
+        return self.Elog_like_X(like_X,pY) # returns invSigma, invSigmamu, Res
+
+    def Elog_like_X(self,like_X, pY, iters=2):
+        if like_X is None:
+            p = self.p - self.pad_X
+            like_X = MultivariateNormal_vector_format(invSigmamu = torch.zeros((pY.ndim-1)*(1,)+(p,1)),invSigma = torch.eye(p).expand((pY.ndim-1)*(1,)+(p,p)))
         N = pY.sum(-1,True)-(pY.cumsum(-1)-pY)
         YmN = pY-N/2.0   
         pgb = N[...,:-1]
@@ -128,21 +200,43 @@ class MultiNomialLogisticRegression():
 
         for i in range(iters):
             if self.pad_X is True:
-                px = MultivariateNormal_vector_format(invSigmamu = (YmN.view(YmN.shape+(1,1))*self.beta.mean()[...,:-1,-1:] - Ew.view(Ew.shape + (1,1))*BBT[...,:-1,-1:]).sum(-3),
-                                                    invSigma = (Ew.view(Ew.shape+(1,1))*BBT[...,:-1,:-1]).sum(-3))            
-                pgc = ((BBT[...,:-1,:-1]*px.EXXT().unsqueeze(-3)).sum(-1).sum(-1)+2*(BBT[...,-1:,:-1]@px.mean().unsqueeze(-3)).squeeze(-1).squeeze(-1)+BBT[...,-1,-1]).sqrt()  # should have shape (sample x batch x n)
+                invSigmamu = (YmN.view(YmN.shape+(1,1))*self.beta.mean()[...,:-1,-1:] - Ew.view(Ew.shape + (1,1))*BBT[...,:-1,-1:]).sum(-3)
+                invSigmamu = like_X.EinvSigmamu()+invSigmamu
+                invSigma = (Ew.view(Ew.shape+(1,1))*BBT[...,:-1,:-1]).sum(-3)
+                invSigma = like_X.EinvSigma()+invSigma
+                Sigma = invSigma.inverse()
+                mu = Sigma@invSigmamu
+                pgc = ((BBT[...,:-1,:-1]*(Sigma + mu@mu.transpose(-1,-2)).unsqueeze(-3)).sum(-1).sum(-1)+2*(BBT[...,-1:,:-1]@mu.unsqueeze(-3)).squeeze(-1).squeeze(-1)+BBT[...,-1,-1]).sqrt()  # should have shape (sample x batch x n)
             else:
-                px = MultivariateNormal_vector_format(invSigmamu = (YmN.view(YmN.shape+(1,1))*self.beta.mean()).sum(-3),invSigma = (Ew.view(Ew.shape+(1,1))*BBT).sum(-3))
-                pgc = ((BBT*px.EXXT().unsqueeze(-3)).sum(-1).sum(-1)).sqrt()  # should have shape (sample x batch x n)
+                invSigmamu = (YmN.view(YmN.shape+(1,1))*self.beta.mean()).sum(-3)
+                invSigmamu = like_X.EinvSigmamu()+invSigmamu
+                invSigma = (Ew.view(Ew.shape+(1,1))*BBT).sum(-3)
+                invSigma = like_X.EinvSigma()+invSigma
+                Sigma = invSigma.inverse()
+                mu = Sigma@invSigmamu
+                pgc = ((BBT*(Sigma + mu@mu.transpose(-1,-2)).unsqueeze(-3)).sum(-1).sum(-1)).sqrt()  # should have shape (sample x batch x n)
             Ew = pgb/2.0/pgc*(pgc/2.0).tanh()
 
-        Res = 0.0
+        if self.pad_X is True:
+            Res = - pgb.sum(-1)*np.log(2.0) + (YmN*((self.beta.mean()[...,-1:,:-1]*mu.unsqueeze(-3)).sum(-1).sum(-1) + self.beta.mean()[...,-1,-1])).sum(-1)
+        else:
+            Res = - pgb.sum(-1)*np.log(2.0) + (YmN*((self.beta.mean()*mu.unsqueeze(-3)).sum(-1).sum(-1) )).sum(-1)  
+        Res = Res - (pgb*(0.5*pgc).cosh().log()).sum(-1) + like_X.Res()# + 0.5*(mu*invSigmamu).sum(-2).squeeze(-1) - 0.5*invSigma.logdet() + like_X.dim/2.0*np.log(2*np.pi)
+        return invSigma, invSigmamu, Sigma, mu, Res
 
-        return px.invSigma, px.invSigmamu, Res
+    def log_predict(self,X):  # slower than log_predict_1 because some calculations are repeated
+        sample_shape = X.shape[:-1]
+        Yt = torch.eye(self.n+1)
+        for i in range(len(sample_shape)):
+            Yt = Yt.unsqueeze(-2)        
+        return self.Elog_like(X,Yt).movedim(0,-1)
 
-    def log_predict(self,X):  # slower than predict because some calculations are repeated
-        Y = torch.eye(self.n+1).unsqueeze(-2)
-        return self.Elog_like(X,Y).transpose(0,-1)
+    def log_predict_pX(self,pX):  # slower than log_predict_1 because some calculations are repeated
+        sample_shape = pX.shape[:-2]
+        Yt = torch.eye(self.n+1)
+        for i in range(len(sample_shape)):
+            Yt = Yt.unsqueeze(-2)        
+        return self.Elog_like_pX(pX,Yt).movedim(0,-1)
 
     def loggeomean(self,X):
         return self.log_predict(X)
@@ -196,6 +290,14 @@ class MultiNomialLogisticRegression():
         # lower bounds the probability of each class by approximately integrating out
         # the pg augmentation variable using q(w) = pg(w|b,<psi^2>.sqrt())
         lnpsb = self.log_predict(X)
+        psb = (lnpsb-lnpsb.max(-1,True)[0]).exp()
+        psb = psb/psb.sum(-1,True)
+        return psb
+
+    def predict_pX(self,pX):
+        # lower bounds the probability of each class by approximately integrating out
+        # the pg augmentation variable using q(w) = pg(w|b,<psi^2>.sqrt())
+        lnpsb = self.log_predict_pX(pX)
         psb = (lnpsb-lnpsb.max(-1,True)[0]).exp()
         psb = psb/psb.sum(-1,True)
         return psb
@@ -310,10 +412,11 @@ class MultiNomialLogisticRegression():
 # Y = torch.distributions.OneHotCategorical(logits = logpY).sample()
 
 # model = MultiNomialLogisticRegression(n,p,batch_shape=(),pad_X=True)
-
-# model.raw_update(X.unsqueeze(-2),Y.unsqueeze(-2),iters =20,verbose=True)
-# #model.raw_update(X.unsqueeze(-2),Y.unsqueeze(-2),iters =20,verbose=True)
-# #model.update(Delta(X.unsqueeze(-1)),Y,iters =4)
+# if model.batch_shape != ():
+#     X = X.unsqueeze(-2)
+#     Y = Y.unsqueeze(-2)
+# model.raw_update(X,Y,iters=20,verbose=True)
+# model.update(Delta(X.unsqueeze(-1)),Y,iters =4)
 # What = model.beta.mean().squeeze()
 
 # print('Predictions by lowerbounding with q(w|b,<psi^2>)')
@@ -322,24 +425,27 @@ class MultiNomialLogisticRegression():
 #     plt.scatter(pY.log()[:,i],psb.log()[:,i])    
 # plt.plot([pY.log().min(),0],[pY.log().min(),0])
 # plt.show()
-# # for i in range(n):
-# #     plt.scatter(pY[:,i],psb[:,i])    
-# # plt.plot([0,1],[0,1])
-# # plt.show()
 
-# print('Predictions by marginaling out q(beta) with w = <w|b,<psi^2>>')
-# psb2 = model.predict_2(X)
-# for i in range(n):
-#     plt.scatter(pY.log()[:,i],psb2.log()[:,i])    
-# plt.plot([pY.log().min(),0],[pY.log().min(),0])
-# plt.show()
-# psb2 = model.predict(X)
-# # for i in range(n):
-# #     plt.scatter(pY[:,i],psb2[:,i])    
-# # plt.plot([0,1],[0,1])
-# # plt.show()
-# print('Percent Correct   = ',((Y.argmax(-1)==psb.argmax(-1)).sum()/Y.shape[0]).data*100)
-# print('Percent Correct_2 = ',((Y.argmax(-1)==psb2.argmax(-1)).sum()/Y.shape[0]).data*100)
+
+
+# # print('Percent Correct   = ',((Y.argmax(-1)==psb.argmax(-1)).sum()/Y.shape[0]).data*100)
+# # # for i in range(n):
+# # #     plt.scatter(pY[:,i],psb[:,i])    
+# # # plt.plot([0,1],[0,1])
+# # # plt.show()
+
+# # # print('Predictions by marginaling out q(beta) with w = <w|b,<psi^2>>')
+# # # psb2 = model.predict_2(X)
+# # # for i in range(n):
+# # #     plt.scatter(pY.log()[:,i],psb2.log()[:,i])    
+# # # plt.plot([pY.log().min(),0],[pY.log().min(),0])
+# # # plt.show()
+# # # psb2 = model.predict(X)
+# # # # for i in range(n):
+# # # #     plt.scatter(pY[:,i],psb2[:,i])    
+# # # # plt.plot([0,1],[0,1])
+# # # # plt.show()
+# # # print('Percent Correct_2 = ',((Y.argmax(-1)==psb2.argmax(-1)).sum()/Y.shape[0]).data*100)
 
 # for i in range(n-1):
 #     plt.errorbar(W[i,:],model.beta.mean().squeeze(-1)[i,:-1],yerr=2*model.beta.ESigma().diagonal(dim1=-2,dim2=-1)[i,:-1].sqrt(),fmt='o',linestyle='None')

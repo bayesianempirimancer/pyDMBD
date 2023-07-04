@@ -81,16 +81,24 @@ class DMBD(LinearDynamicalSystems):
 #       line forces the role model to be shared by all observation.  There is no difference ie computation time associaated with this choice
 #       only the memory requirements.  
         if self.unique_obs is True:
-            self.obs_model = ARHMM_prXRY(role_dim, obs_dim, hidden_dim, regression_dim, batch_shape = batch_shape + (n_obs,), mask = B_mask,pad_X=False).to_event(1)
+            self.obs_model = ARHMM_prXRY(role_dim, obs_dim, hidden_dim, regression_dim, batch_shape = batch_shape + (n_obs,), X_mask = B_mask.sum(-2,True)>0,pad_X=False).to_event(1)
             role_mask = role_mask.unsqueeze(0).unsqueeze(0)
         else:   
-            self.obs_model = ARHMM_prXRY(role_dim, obs_dim, hidden_dim, regression_dim, batch_shape = batch_shape, mask = B_mask,pad_X=False)
+            self.obs_model = ARHMM_prXRY(role_dim, obs_dim, hidden_dim, regression_dim, batch_shape = batch_shape, X_mask = B_mask.sum(-2,True)>0,pad_X=False)
             role_mask = role_mask
         self.obs_model.transition.alpha_0 = self.obs_model.transition.alpha_0*role_mask
         self.obs_model.transition_mask = role_mask
         self.obs_model.transition.alpha = self.obs_model.transition.alpha*role_mask
+
+        self.obs_model.obs_dist.invU.invU_0       = self.obs_model.obs_dist.invU.invU_0*torch.tensor(self.role_dims).float().mean()**2
+        self.obs_model.obs_dist.invU.logdet_invU_0= self.obs_model.obs_dist.invU.invU_0.logdet()
+        # if number_of_objects == 1:
+        #     self.obs_model.obs_dist.mu[...,role_dims[1]:role_dims[1]+role_dims[2],:,:] = 0.0
+        #     self.A.mu[...,hidden_dims[1]:hidden_dims[1]+hidden_dims[2],hidden_dims[1]:hidden_dims[1]+hidden_dims[2]] = torch.eye(hidden_dims[2])
+
         self.set_latent_parms()
         self.log_like = -torch.tensor(torch.inf,requires_grad=False)
+#        self.obs_model.obs_dist.invU.invU_0 = self.obs_model.obs_dist.invU.invU_0/self.role_dim
 
         print("ELBO Calculation is Approximate!!!  Not Guaranteed to increase!!!")
 
@@ -188,12 +196,11 @@ class DMBD(LinearDynamicalSystems):
         for i in range(iters):
             self.iters = self.iters + 1
             ELBO_last = ELBO
-            t = time.time()
+            t = time.time()            
             for j in range(latent_iters-1):
                 self.px = None
                 self.update_assignments(y,r)  # compute the ss for the markov part of the obs model
                 self.update_latents(y,u,r)  # compute the ss for the latent 
-
             self.update_assignments(y,r)  
             # print('Number of NaNs in p = ',self.obs_model.p.isnan().sum())
             self.update_obs_parms(y, r, lr=lr)
@@ -202,12 +209,13 @@ class DMBD(LinearDynamicalSystems):
             # print('Number of NaNs in obs_parms.emission = ',self.obs_model.obs_dist.EXXT().isnan().sum())
             self.update_latents(y,u,r)  
             # print('Number of NaNs in px = ',self.px.EXXT().isnan().sum())
-            ELBO = self.ELBO().sum()            
+            ELBO = self.ELBO()            
             self.update_latent_parms(p=None,lr = lr)  
             # print('Number of NaNs in latent_parms A = ',self.A.EXXT().isnan().sum())
             # print('Number of NaNs in latent_parms x0 = ',self.x0.EXXT().isnan().sum())
 
-            print('Percent Change in ELBO = ',((ELBO-ELBO_last)/ELBO_last.abs()).numpy()*100,  '   Iteration Time = ',(time.time()-t))
+            if verbose is True:
+                print('Percent Change in ELBO = ',((ELBO-ELBO_last)/ELBO_last.abs()).numpy()*100,  '   Iteration Time = ',(time.time()-t))
             self.ELBO_save = torch.cat((self.ELBO_save,ELBO*torch.ones(1)),dim=-1)
 
     def ELBO(self):
@@ -316,6 +324,11 @@ class DMBD(LinearDynamicalSystems):
             B_mask = torch.cat((Bs,Bb,Bz),dim=-3)
         else:
             B_mask = torch.cat((Bs,Bb,Bz),dim=-3)
+        # Only environment can have regressors.
+        # if regression_dim==1:
+        #     temp = torch.cat((torch.ones((role_dims[0],obs_dim) + (1,)),torch.zeros((role_dims[1],obs_dim)+(1,)),torch.zeros((role_dims[2],obs_dim)+(1,))),dim=-3)
+        #     B_mask = torch.cat((B_mask,temp),dim=-1) > 0
+        # else:
         B_mask = torch.cat((B_mask,torch.ones(B_mask.shape[:-1]+(regression_dim,))),dim=-1) > 0 
 
         role_mask_s = torch.ones(role_dims[0],role_dims[0]+role_dims[1],requires_grad=False)
