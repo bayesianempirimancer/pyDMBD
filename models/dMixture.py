@@ -12,8 +12,8 @@ class dMixture():
     #       when this is the case the observations will not need to be reshaped at any time.  Only p will be reshaped for raw_updates
     #
 
-    print('not working:  fix update routine')
     def __init__(self,dist,p,expand_to_batch=False):
+        print('dMixture not working:  fix update routine')
         self.event_dim = 1
         self.batch_dim = dist.batch_dim - 1
         self.event_shape = dist.batch_shape[-1:]

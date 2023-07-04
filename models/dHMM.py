@@ -193,46 +193,46 @@ class dHMM():
     #     return out
 
 
-from dists import NormalInverseWishart
-obs_dim = 2
-hidden_dim = 4
-p=10 
+# from dists import NormalInverseWishart
+# obs_dim = 2
+# hidden_dim = 4
+# p=10 
 
 
-T = 100
-num_samples = 199
-sample_shape = (T,num_samples)
+# T = 100
+# num_samples = 199
+# sample_shape = (T,num_samples)
 
-A = torch.rand(hidden_dim,hidden_dim)+5*torch.eye(hidden_dim)
-A = A/A.sum(-1,keepdim=True)
-B = 2*torch.randn(hidden_dim,obs_dim)
-C = torch.randn(hidden_dim,p,hidden_dim)/np.sqrt(p)
+# A = torch.rand(hidden_dim,hidden_dim)+5*torch.eye(hidden_dim)
+# A = A/A.sum(-1,keepdim=True)
+# B = 2*torch.randn(hidden_dim,obs_dim)
+# C = torch.randn(hidden_dim,p,hidden_dim)/np.sqrt(p)
 
-X = torch.randn(T,num_samples,p,1)
+# X = torch.randn(T,num_samples,p,1)
 
-z=torch.rand(T,num_samples,hidden_dim).argmax(-1)
-Y = torch.randn(T,num_samples,obs_dim)
-for t in range(1,T):
-    z[t]=(A[z[t-1]].log()+(X[t]*C[z[t-1]]).sum(-2)+torch.randn(num_samples,hidden_dim)).argmax(-1)
-    Y[t]= B[z[t]] + torch.randn(num_samples,obs_dim)/10.0
-
-
-X = X.squeeze(-1)
-
-obs_dist = NormalInverseWishart(mu_0 = torch.zeros(hidden_dim,obs_dim))
-model = dHMM(obs_dist=obs_dist,p=p)
-
-model.raw_update(X,Y,iters=20,lr=0.5,verbose=True)
+# z=torch.rand(T,num_samples,hidden_dim).argmax(-1)
+# Y = torch.randn(T,num_samples,obs_dim)
+# for t in range(1,T):
+#     z[t]=(A[z[t-1]].log()+(X[t]*C[z[t-1]]).sum(-2)+torch.randn(num_samples,hidden_dim)).argmax(-1)
+#     Y[t]= B[z[t]] + torch.randn(num_samples,obs_dim)/10.0
 
 
-from matplotlib import pyplot as plt
-plt.plot(-z[:,0])
-plt.plot(model.p[:,0])
+# X = X.squeeze(-1)
 
-B1 = B/(B*B).sum(-1,keepdim=True).sqrt()
-B2 = model.obs_dist.mean()
-B2 = B2/(B2*B2).sum(-1,keepdim=True).sqrt()
+# obs_dist = NormalInverseWishart(mu_0 = torch.zeros(hidden_dim,obs_dim))
+# model = dHMM(obs_dist=obs_dist,p=p)
 
-m,idx= (B1@B2.transpose(-2,-1)).max(-1)
+# model.raw_update(X,Y,iters=20,lr=0.5,verbose=True)
 
-print(B1@B2[idx].transpose(-2,-1))
+
+# from matplotlib import pyplot as plt
+# plt.plot(-z[:,0])
+# plt.plot(model.p[:,0])
+
+# B1 = B/(B*B).sum(-1,keepdim=True).sqrt()
+# B2 = model.obs_dist.mean()
+# B2 = B2/(B2*B2).sum(-1,keepdim=True).sqrt()
+
+# m,idx= (B1@B2.transpose(-2,-1)).max(-1)
+
+# print(B1@B2[idx].transpose(-2,-1))

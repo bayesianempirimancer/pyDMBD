@@ -72,27 +72,29 @@ class BayesianFactorAnalysis():
     # This method computes the Kullback-Leibler divergence between the prior distribution over the latent variables and the true prior
     def KLqprior(self):
         return self.A.KLqprior()  # + self.alpha.KLqprior()
-obs_dim=2
-latent_dim=2
-num_samps=200
-model = BayesianFactorAnalysis(obs_dim, latent_dim,pad_X=False)
 
-A=torch.randn(latent_dim,obs_dim)
-Z=torch.randn(num_samps,latent_dim)
-Y = Z@A + torch.randn(num_samps,obs_dim)/10.0
 
-Y=Y-Y.mean(0,True)
-A=A.transpose(-2,-1)
-model.raw_update(Y,iters=10,lr=1,verbose=True)
+# obs_dim=2
+# latent_dim=2
+# num_samps=200
+# model = BayesianFactorAnalysis(obs_dim, latent_dim,pad_X=False)
 
-Yhat = model.A.mean()@model.pz.mean()
-from matplotlib import pyplot as plt
-plt.scatter(Y,Yhat)
-plt.show()
+# A=torch.randn(latent_dim,obs_dim)
+# Z=torch.randn(num_samps,latent_dim)
+# Y = Z@A + torch.randn(num_samps,obs_dim)/10.0
 
-plt.scatter(A@A.transpose(-2,-1),model.A.EXXT())
+# Y=Y-Y.mean(0,True)
+# A=A.transpose(-2,-1)
+# model.raw_update(Y,iters=10,lr=1,verbose=True)
 
-self=model
+# Yhat = model.A.mean()@model.pz.mean()
+# from matplotlib import pyplot as plt
+# plt.scatter(Y,Yhat)
+# plt.show()
+
+# plt.scatter(A@A.transpose(-2,-1),model.A.EXXT())
+
+# self=model
 
 # from NLRegression import *
 # from matplotlib import pyplot as plt

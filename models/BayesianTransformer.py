@@ -56,11 +56,3 @@ class BayesianTransformer(MixtureofLinearTransforms):
         Residual = (Residual*self.p).sum(-1).sum(-1)
         return invSigma, invSigmamu, Residual
 
-model = BayesianTransformer(4,2,3)
-x = torch.randn(100,3)
-y = torch.randn(100,10,2)
-
-XY = model.reshape_inputs(x,y)
-
-model.update(x,y)
-temp = model.Elog_like_X_given_Y(y.unsqueeze(-2).unsqueeze(-1))
