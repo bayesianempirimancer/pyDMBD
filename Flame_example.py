@@ -4,23 +4,9 @@ print('Test on Flame data set')
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-import DynamicMarkovBlanketDiscovery as DMBD
+from DynamicMarkovBlanketDiscovery import *
 
-data = torch.load('./data/flame_data.pt')
-data = data + torch.randn(data.shape)*0.0
-data=data[:503]
-data = (data[:-2:3]+data[1:-1:3]+ data[2::3])/3
-
-v_data = data.diff(n=1,dim=0)
-v_data = v_data/v_data.std((0,1,2),keepdim=True)
-data = torch.cat((data[1:],v_data),dim=-1)
-data = data + torch.randn(data.shape)*0.1
-
-
-idx = data[-1,:,100,0]>0.5
-data = data[:,idx,:]
-data = data[...,0:150,:]
-
+data = torch.load('./data/flame_data_sm.pt')
 
 model = DMBD(obs_shape=data.shape[-2:],role_dims=(2,2,2),hidden_dims=(4,4,4),batch_shape=(),regression_dim = -1, control_dim=0,number_of_objects=1)
 
