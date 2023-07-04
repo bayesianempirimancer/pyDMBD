@@ -6,7 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from DynamicMarkovBlanketDiscovery import *
 
-data = torch.load('./data/flame_data_sm.pt')
+data = torch.load('./data/flame_even_smaller.pt')
 
 model = DMBD(obs_shape=data.shape[-2:],role_dims=(2,2,2),hidden_dims=(4,4,4),batch_shape=(),regression_dim = -1, control_dim=0,number_of_objects=1)
 
