@@ -7,26 +7,8 @@ start_time=time.time()
 
 
 print("Test on Flocking Data")
-with np.load("data\couzin2zone_sim_hist_key1_100runs.npz") as data:
-        r = data["r"]
-        v = data["v"]
 
-r = torch.tensor(r).float()
-r = r/r.std()
-v = torch.tensor(v).float()
-v = v/v.std()
-
-data = torch.cat((r,v),dim=-1).transpose(0,1)
-
-def smoothe(data,n):
-    temp = data[0:-n]
-    for i in range(1,n):
-        temp = temp+data[i:-(n-i)]
-    return temp[::n]/n
-data = 2*smoothe(data,20)
-data = data[:80]
-data_v = data[...,2:4]
-print("Preprocessing Complete")
+data_v = torch.load('./data/flocking.pt')
 
 model = DMBD(obs_shape=data_v.shape[-2:],role_dims=(2,2,2),hidden_dims=(4,2,2),regression_dim = -1, control_dim = 0, number_of_objects=5, unique_obs=False)
 
