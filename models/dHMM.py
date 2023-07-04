@@ -1,8 +1,8 @@
 
 import torch
 import numpy as np
-from dists import Dirichlet
-from MultiNomialLogisticRegression import MultiNomialLogisticRegression
+from .dists import Dirichlet
+from .MultiNomialLogisticRegression import MultiNomialLogisticRegression
 
 class dHMM():
     # the driven HMM assumes that transition probabilities are given by p(z^t|z^t-1,X^t)  

@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from dists import Gamma
+from .dists import Gamma
 
 class NormalSparse():
     # bunch of independent normal distributions with zero mean and a gamma prior on variance

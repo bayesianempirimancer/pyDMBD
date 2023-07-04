@@ -1,8 +1,8 @@
 import torch
 import numpy as np
-from dists import NormalInverseWishart
-from dists import NormalGamma
-from dists import Mixture
+from .dists import NormalInverseWishart
+from .dists import NormalGamma
+from .dists import Mixture
 
 class GaussianMixtureModel(Mixture):
     def __init__(self,dim,n):

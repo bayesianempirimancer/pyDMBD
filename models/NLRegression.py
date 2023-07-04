@@ -1,10 +1,10 @@
 
 import torch
 import numpy as np
-from dists import MatrixNormalWishart, MatrixNormalGamma
-from dists import NormalInverseWishart
-from dists import NormalGamma
-from dists import Dirichlet
+from .dists import MatrixNormalWishart, MatrixNormalGamma
+from .dists import NormalInverseWishart
+from .dists import NormalGamma
+from .dists import Dirichlet
 
 class NLRegression_orig():
     # Generative model:

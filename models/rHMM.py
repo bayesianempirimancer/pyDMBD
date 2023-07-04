@@ -1,8 +1,8 @@
 
 import torch
 import numpy as np
-from dists import Dirichlet
-from MultiNomialLogisticRegression import MultiNomialLogisticRegression as MNLR
+from .dists import Dirichlet
+from .MultiNomialLogisticRegression import MultiNomialLogisticRegression as MNLR
 class rHMM():
 
     def __init__(self, obs_dist, p, transition_mask=None):        

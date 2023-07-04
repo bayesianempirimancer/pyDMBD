@@ -1,8 +1,8 @@
 
 import torch
 import numpy as np
-from dists import MatrixNormalWishart
-from MultiNomialLogisticRegression import MultiNomialLogisticRegression 
+from .dists import MatrixNormalWishart
+from .MultiNomialLogisticRegression import MultiNomialLogisticRegression 
 
 class NLRegression_Multinomial():
     # Generative model of NL regression.  Generative model is:

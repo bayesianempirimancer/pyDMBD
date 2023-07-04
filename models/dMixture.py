@@ -1,6 +1,6 @@
 
 import torch
-from MultiNomialLogisticRegression import MultiNomialLogisticRegression
+from .MultiNomialLogisticRegression import MultiNomialLogisticRegression
 class dMixture():
     # This class takes takes in a distribution with non trivial batch shape and 
     # produces a mixture distribution with the number of mixture components equal

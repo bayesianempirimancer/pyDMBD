@@ -1,7 +1,7 @@
 import torch
 import numpy as np
-from dists.Dirichlet import Dirichlet
-from LDS import LinearDynamicalSystems
+from .dists import Dirichlet
+from .LDS import LinearDynamicalSystems
 
 class MixtureofLinearDynamicalSystems():
     def __init__(self,num_systems, obs_shape, hidden_dim, control_dim, regression_dim):

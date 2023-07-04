@@ -7,11 +7,11 @@
 
 import torch
 import numpy as np
-from dists import MatrixNormalWishart
-from dists import MatrixNormalGamma
+from .dists import MatrixNormalWishart
+from .dists import MatrixNormalGamma
 #from dists import MatrixNormalGamma_UnitTrace
-from dists import NormalInverseWishart
-from dists import MultivariateNormal_vector_format
+from .dists import NormalInverseWishart
+from .dists import MultivariateNormal_vector_format
 
 class LinearDynamicalSystems():
     def __init__(self, obs_shape, hidden_dim, control_dim = 0, regression_dim = 0, obs_model = None, latent_noise = 'independent', batch_shape = (), A_mask =None, B_mask = None):

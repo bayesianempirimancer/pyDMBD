@@ -12,10 +12,10 @@
 import torch
 import numpy as np
 
-from dists import MatrixNormalWishart, MatrixNormalGamma
-from dists import NormalGamma, NormalInverseWishart
-from dists import MultivariateNormal_vector_format 
-from MVN_ard  import MVN_ard
+from .dists import MatrixNormalWishart, MatrixNormalGamma
+from .dists import NormalGamma, NormalInverseWishart
+from .dists import MultivariateNormal_vector_format 
+from .MVN_ard  import MVN_ard
 
 from dists import Delta
 

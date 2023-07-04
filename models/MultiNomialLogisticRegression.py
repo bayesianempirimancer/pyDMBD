@@ -1,7 +1,7 @@
 import torch
 import numpy as np
-from MVN_ard import MVN_ard
-from dists import MultivariateNormal_vector_format
+from .MVN_ard import MVN_ard
+from .dists import MultivariateNormal_vector_format
 
 class MultiNomialLogisticRegression():
     # VB updates for multnomial logistic regression using the polyagamma version of Jaakkola and Jordan's

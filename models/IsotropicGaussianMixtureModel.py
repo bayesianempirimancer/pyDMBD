@@ -1,6 +1,6 @@
 import torch
-from dists import NormalGamma
-from dists import Mixture
+from .dists import NormalGamma
+from .dists import Mixture
 
 class IsotropicGaussianMixtureModel(Mixture):
     def __init__(self,dim,n):

@@ -2,11 +2,9 @@
 # with Gaussian observations 
 
 import torch
-
-
-from dists import MatrixNormalWishart
-from dists import MatrixNormalGamma
-from dists import Mixture
+from .dists import MatrixNormalWishart
+from .dists import MatrixNormalGamma
+from .dists import Mixture
 
 class MixtureofLinearTransforms(Mixture):
     def __init__(self,n,p,dim,batch_shape = (),pad_X=False,independent = False):

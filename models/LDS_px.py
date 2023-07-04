@@ -7,11 +7,11 @@
 
 import torch
 import numpy as np
-from dists import MatrixNormalWishart
-from dists import MatrixNormalGamma
+from .dists import MatrixNormalWishart
+from .dists import MatrixNormalGamma
 #from dists import MatrixNormalGamma_UnitTrace
-from dists import NormalInverseWishart
-from dists import MultivariateNormal_vector_format
+from .dists import NormalInverseWishart
+from .dists import MultivariateNormal_vector_format
 
 class LinearDynamicalSystems():
     def __init__(self, obs_shape, hidden_dim, control_dim = 0, regression_dim = 0, obs_model = None, latent_noise = 'independent', batch_shape = (), A_mask =None, B_mask = None):
@@ -388,7 +388,7 @@ class LinearDynamicalSystems():
             invSigma_like, invSigmamu_like, Residual_like = self.log_likelihood_function(y[t+1],r[t+1])
             invGamma, invGammamu = self.backward_step(invGamma, invGammamu, invSigma_like, invSigmamu_like,u[t+1])
 #            invGamma, invGammamu, Residual, logZ_b[t] = self.backward_step_with_Residual(invGamma, invGammamu, Residual, invSigma_like[t+1], invSigmamu_like[t+1],Residual_like[t+1],u[t+1])
-            self.px.Sigma[t], self.px.mu[t], self.px.invSigma[t], self.px.invSigmamu[t] = self.forward_backward_combiner(invSigma[t], invSigmamu[t], invGamma, invGammamu )
+            self.px.Sigma[t], self.px.mu[t], self.px.invSigma[t], self.px.invSigmamu[t] = self.forward_backward_combiner(self.px.invSigma[t], self.px.invSigmamu[t], invGamma, invGammamu )
 
         Sigma_t_tp1[-1] = Sigma_t_tp1[-1] @ self.QA_xp_x.transpose(-2,-1) @ (invGamma + invSigma_like[0] + self.invQ - self.QA_xp_x@Sigma_t_tp1[-1]*self.QA_xp_x.transpose(-2,-1)).inverse()#uses invSigma from tp1 which we probably should have stored 
         invSigma_like, invSigmamu_like, Residual_like = self.log_likelihood_function(y[0],r[0])

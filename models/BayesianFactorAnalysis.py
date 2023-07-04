@@ -1,7 +1,7 @@
 # Import necessary libraries
 import torch
 import numpy as np
-from dists import MatrixNormalGamma, MultivariateNormal_vector_format
+from .dists import MatrixNormalGamma, MultivariateNormal_vector_format
 
 # This class represents a Bayesian factor analysis model
 class BayesianFactorAnalysis():

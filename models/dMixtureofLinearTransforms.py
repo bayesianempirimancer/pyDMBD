@@ -1,8 +1,8 @@
 
 import torch
 import numpy as np
-from MultiNomialLogisticRegression import MultiNomialLogisticRegression
-from dists import MatrixNormalWishart, MultivariateNormal_vector_format
+from .MultiNomialLogisticRegression import MultiNomialLogisticRegression
+from .dists import MatrixNormalWishart, MultivariateNormal_vector_format
 
 class dMixtureofLinearTransforms():
 

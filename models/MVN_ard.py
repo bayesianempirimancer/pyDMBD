@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from dists import Gamma
+from .dists import Gamma
 
 class MVN_ard():
     def __init__(self,dim,batch_shape=(),scale=1):

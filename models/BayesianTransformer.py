@@ -1,9 +1,9 @@
 import torch
 import numpy as np
 
-from dists import Dirichlet
-from dists import MatrixNormalWishart
-from MixtureofLinearTransforms import MixtureofLinearTransforms
+from .dists import Dirichlet
+from .dists import MatrixNormalWishart
+from .MixtureofLinearTransforms import MixtureofLinearTransforms
 
 class BayesianTransformer(MixtureofLinearTransforms):
     # The logic of the Bayesian Transformer is that observations, Y with size (num_obs,obs_dim), are probabilistically 

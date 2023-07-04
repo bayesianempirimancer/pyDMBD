@@ -3,8 +3,8 @@
 
 import torch
 import numpy as np
-from dists.MatrixNormalGamma import MatrixNormalGamma
-from dists.Dirichlet import Dirichlet
+from .dists.MatrixNormalGamma import MatrixNormalGamma
+from .dists.Dirichlet import Dirichlet
 
 class MixtureofMatrixNormalGammas():
 
