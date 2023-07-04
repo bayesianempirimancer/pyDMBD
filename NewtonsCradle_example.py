@@ -1,4 +1,5 @@
-from DynamicMarkovBlanketDiscovery import *
+
+from models.DynamicMarkovBlanketDiscovery import *
 from matplotlib import pyplot as plt
 from matplotlib.animation import FuncAnimation, FFMpegWriter
 from matplotlib import cm 

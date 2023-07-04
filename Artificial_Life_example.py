@@ -1,5 +1,5 @@
 
-from DynamicMarkovBlanketDiscovery import *
+from models.DynamicMarkovBlanketDiscovery import *
 from matplotlib import pyplot as plt
 from matplotlib.animation import FuncAnimation, FFMpegWriter
 from matplotlib import cm 
@@ -43,7 +43,7 @@ data = data.unsqueeze(1)
 # len_v_model = v_model
 
 print('Initializing X + V model....')
-model = DMBD(obs_shape=data.shape[-2:],role_dims=(11,11,11),hidden_dims=(4,4,4),regression_dim = 1, control_dim = 0, number_of_objects=1, unique_obs=False)
+model = DMBD(obs_shape=data.shape[-2:],role_dims=(11,11,11),hidden_dims=(4,4,4),regression_dim = 0, control_dim = 0, number_of_objects=1, unique_obs=False)
 
 print('Updating model X+V....')
 model.update(data,None,None,iters=20,latent_iters=1,lr=0.5)

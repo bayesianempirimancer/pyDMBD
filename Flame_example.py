@@ -4,7 +4,7 @@ print('Test on Flame data set')
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from DynamicMarkovBlanketDiscovery import *
+from models.DynamicMarkovBlanketDiscovery import *
 
 data = torch.load('./data/flame_even_smaller.pt')
 
