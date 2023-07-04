@@ -17,7 +17,7 @@ from .dists import NormalGamma, NormalInverseWishart
 from .dists import MultivariateNormal_vector_format 
 from .MVN_ard  import MVN_ard
 
-from dists import Delta
+from .dists import Delta
 
 class ReducedRankRegression():
     def __init__(self,n,p,dim,batch_shape = (),pad_X=False,independent = False):
