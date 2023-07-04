@@ -7,40 +7,7 @@ start_time=time.time()
 
 print('Test on Artificial Life Data')
 print('Loading data....')
-y_data=np.genfromtxt('./data/rotor_story_y.txt')
-x_data=np.genfromtxt('./data/rotor_story_x.txt')
-print('....Done.')
-y=torch.tensor(y_data,requires_grad=False).float()
-x=torch.tensor(x_data,requires_grad=False).float()
-y=y.unsqueeze(-1)
-x=x.unsqueeze(-1)
-
-T = 100
-data = torch.cat((y,x),dim=-1)
-data = data[::9]
-v_data = torch.diff(data,dim=0)
-v_data = v_data/v_data.std()
-data = data[1:]
-data = data/data.std()
-
-data = torch.cat((data,v_data),dim=-1)
-T = data.shape[0]
-T = T//2
-data = data[:T]
-
-data = data.unsqueeze(1)
-
-# print('Initializing V model....')
-# v_model = DMBD(obs_shape=v_data.shape[-2:],role_dims=(16,16,16),hidden_dims=(5,5,5))
-# print('Updating model V....')
-# v_model.update(v_data,None,None,iters=100,latent_iters=1,lr=0.25)
-# v_model.update(v_data,None,None,iters=10,latent_iters=1,lr=1)
-# print('Making Movie')
-# f = r"c://Users/brain/Desktop/rotator_movie_v.mp4"
-# ar = animate_results('sbz',f)
-# ar.make_movie(v_model, data, list(range(10)))
-# len_v_data = v_data
-# len_v_model = v_model
+data = torch.load('./data/rotor.pt')
 
 print('Initializing X + V model....')
 model = DMBD(obs_shape=data.shape[-2:],role_dims=(11,11,11),hidden_dims=(4,4,4),regression_dim = 1, control_dim = 0, number_of_objects=1, unique_obs=False)
