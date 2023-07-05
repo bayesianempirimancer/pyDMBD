@@ -371,9 +371,9 @@ class LinearDynamicalSystems():
         Sigma_t_tp1 = torch.zeros(sample_shape + self.batch_shape + self.offset +(self.hidden_dim,self.hidden_dim),requires_grad=False)
             # Note that initially Sigma_t_tp1 is a holding place for SigmaStar_t which is called Sigma_tm1_tm1 in the forward step
 
+        invSigma_like, invSigmamu_like, Residual_like = self.log_likelihood_function(y,r)
         for t in range(T_max):
-            invSigma_like, invSigmamu_like, Residual_like = self.log_likelihood_function(y[t],r[t])
-            self.px.invSigma[t], self.px.invSigmamu[t], Residual, logZ[t], Sigma_t_tp1[t-1] = self.forward_step(self.px.invSigma[t-1], self.px.invSigmamu[t-1], Residual, invSigma_like, invSigmamu_like, Residual_like, u[t])
+            self.px.invSigma[t], self.px.invSigmamu[t], Residual, logZ[t], Sigma_t_tp1[t-1] = self.forward_step(self.px.invSigma[t-1], self.px.invSigmamu[t-1], Residual, invSigma_like[t], invSigmamu_like[t], Residual_like[t], u[t])
 
         # now go backwards
 
@@ -386,15 +386,13 @@ class LinearDynamicalSystems():
         # logZ_b = torch.zeros(logZ.shape,requires_grad=False)
 
         for t in range(T_max-2,-1,-1):
-            invSigma_like, invSigmamu_like, Residual_like = self.log_likelihood_function(y[t+1],r[t+1])
-            Sigma_t_tp1[t] = Sigma_t_tp1[t] @ self.QA_xp_x.transpose(-2,-1) @ (invGamma + invSigma_like + self.invQ - self.QA_xp_x@Sigma_t_tp1[t]*self.QA_xp_x.transpose(-2,-1)).inverse()
-            invGamma, invGammamu = self.backward_step(invGamma, invGammamu, invSigma_like, invSigmamu_like,u[t+1])
+            Sigma_t_tp1[t] = Sigma_t_tp1[t] @ self.QA_xp_x.transpose(-2,-1) @ (invGamma + invSigma_like[t+1] + self.invQ - self.QA_xp_x@Sigma_t_tp1[t]*self.QA_xp_x.transpose(-2,-1)).inverse()
+            invGamma, invGammamu = self.backward_step(invGamma, invGammamu, invSigma_like[t+1], invSigmamu_like[t+1],u[t+1])
 #            invGamma, invGammamu, Residual, logZ_b[t] = self.backward_step_with_Residual(invGamma, invGammamu, Residual, invSigma_like[t+1], invSigmamu_like[t+1],Residual_like[t+1],u[t+1])
             self.px.Sigma[t], self.px.mu[t], self.px.invSigma[t], self.px.invSigmamu[t] = self.forward_backward_combiner(self.px.invSigma[t], self.px.invSigmamu[t], invGamma, invGammamu )
 
         Sigma_t_tp1[-1] = Sigma_t_tp1[-1] @ self.QA_xp_x.transpose(-2,-1) @ (invGamma + invSigma_like[0] + self.invQ - self.QA_xp_x@Sigma_t_tp1[-1]*self.QA_xp_x.transpose(-2,-1)).inverse()#uses invSigma from tp1 which we probably should have stored 
-        invSigma_like, invSigmamu_like, Residual_like = self.log_likelihood_function(y[0],r[0])
-        invGamma, invGammamu = self.backward_step(invGamma, invGammamu, invSigma_like, invSigmamu_like,u[0])
+        invGamma, invGammamu = self.backward_step(invGamma, invGammamu, invSigma_like[0], invSigmamu_like[0],u[0])
 #        invGamma, invGammamu, Residual, logZ_b[-1] = self.backward_step_with_Residual(invGamma, invGammamu, Residual, invSigma_like[0], invSigmamu_like[0],Residual_like[0],u[0])
         Sigma_x0_x0 = (invGamma+self.x0.EinvSigma()).inverse()   # posterior parameters for t
         mu_x0 = Sigma_x0_x0 @ (invGammamu + self.x0.EinvSigmamu().unsqueeze(-1))
