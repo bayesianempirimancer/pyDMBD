@@ -53,13 +53,15 @@ A quick note on role_dims.  Rather than just have one type of observation matrix
 
 batch_shape = () by default, but if you want to fit a bunch of DMBD's in parallel and pick the one with the best ELBO then set batch_shape = (number_of_parallel_models,).  
 
-To fit the model just use the update method: model.update(y,u,r,lr=1,iters=1)
+To fit the model just use the update method: model.update(y,u,r,lr=1,iters=20,verbose='True')
 
       y.shape = (T, batch_shape, number_of_microscopic_objects, dimension_of_the_observable)
       u.shape = (T, batch_shape, control_dim) or u=None
       r.shape = (T, batch_shape, number_of_microscopic_objects, regression_dim) or (T, batch_shape, 1, regression_dim) or r=None
 
-Here T is the number of time points. To run a mini_batch you use latent_iters with iters = 1 (the default). The logic here is that you should update latents and assignments as few times before updating any parameters. I obtained decent results with latent iters = 5.
+Here T is the number of time points.  Each iteration performs a single coordinate ascent update.  
+
+To run a mini_batch you use latent_iters with iters = 1 (the default). The logic here is that you should update latents and assignments as few times before updating any parameters. I obtained decent results with latent iters = 5.
 
       model.update(y_mini_batch,u_mini_batch,r_mini_batch,lr=lr,latent_iters=5)
 
