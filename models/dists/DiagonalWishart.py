@@ -27,13 +27,9 @@ class DiagonalWishart():
         return self
 
     def ss_update(self,SExx,n,lr=1.0):
+        idx = n>1
+        SExx = SExx*(idx)
         self.gamma.ss_update(n/2.0,SExx/2.0,lr)
-        # _HACK
-        idx = self.gamma.beta<self.gamma.beta_0
-        if idx.sum()>0:
-            print('DiagonalWishart ss_update hack triggered at %d locations'%idx.sum())
-            self.gamma.alpha[idx] = self.gamma.alpha_0[idx]
-            self.gamma.beta[idx] = self.gamma.beta_0[idx]  
 
     def KLqprior(self):
         return self.gamma.KLqprior()

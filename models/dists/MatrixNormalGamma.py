@@ -107,6 +107,7 @@ class MatrixNormalGamma():
 
         SEyy = SEyy - mu@invV@mu.transpose(-2,-1)
         SEyy = SEyy + (self.mu_0@self.invV_0@self.mu_0.transpose(-2,-1))
+        
         self.invU.ss_update(SEyy.diagonal(dim1=-2,dim2=-1), n.unsqueeze(-1), lr)
         self.invV = (invV-self.invV)*lr + self.invV
         self.invV = 0.5*(self.invV + self.invV.transpose(-2,-1))

@@ -13,7 +13,7 @@ class Mixture():
     #       when this is the case the observations will not need to be reshaped at any time.  Only p will be reshaped for raw_updates
 
 
-    def __init__(self,dist,expand_to_batch=False):
+    def __init__(self,dist):
         self.event_dim = 1
         self.batch_dim = dist.batch_dim - 1
         self.event_shape = dist.batch_shape[-1:]
@@ -21,7 +21,6 @@ class Mixture():
         self.pi = Dirichlet(0.5*torch.ones(self.batch_shape+self.event_shape,requires_grad=False))
         self.dist = dist
         self.logZ = torch.tensor(-torch.inf,requires_grad=False)
-        self.expand_to_batch = expand_to_batch
 
     def to_event(self,n):
         if n == 0:
@@ -53,9 +52,7 @@ class Mixture():
         self.update(X,iters=iters,lr=lr,verbose=verbose)
 
     def update(self,X,iters=1,lr=1.0,verbose=False):
-        if self.expand_to_batch:
-            X = X.view(X.shape[:-self.dist.event_dim]+(1,)+X.shape[-self.dist.event_dim:])
-        # Otherwise it expects X to be sample_shape + dist.batch_shape[:-1] + (1,) + dist.event_shape 
+        # Expects X to be sample_shape + dist.batch_shape[:-1] + (1,) + dist.event_shape 
         ELBO = torch.tensor(-torch.inf)
         for i in range(iters):
             # E-Step
@@ -115,55 +112,7 @@ class Mixture():
         return out
 
 
-# print('TEST Vanilla MIXTURE')
-# #
-# import numpy as np
-# dim=2
 
-# mu = torch.randn(4,dim)*2
-# A = torch.randn(4,dim,dim)/np.sqrt(dim)
-
-# data = torch.zeros(200,dim)
-
-# for i in range(200):
-#     data[i,:] = mu[i%4,:] + A[i%4,:,:]@torch.randn(dim) + torch.randn(dim)/10.0
-
-# from .NormalInverseWishart import NormalInverseWishart
-# #from NormalInverseWishart import NormalInverseWishart
-# nc=5
-# dist = NormalInverseWishart(torch.ones(nc),torch.zeros(nc,dim),4.0*torch.ones(nc),torch.zeros(nc,dim,dim) + torch.eye(dim))
-# model = Mixture(dist)
-
-# model.update(data.unsqueeze(-2),iters=20,lr=1,verbose=True)
-
-# from matplotlib import pyplot as plt
-# plt.scatter(data[:,0],data[:,1],c=model.assignment().data)
-# plt.show()
-
-# print('TEST MIXTURE with non-trivial batch shape')
-
-# batch_dim = 3
-# dim=2
-# nc=5
-# mu = torch.randn(4,batch_dim,dim)*2  
-# A = torch.randn(4,batch_dim,dim,dim)/np.sqrt(dim)
-# data = torch.zeros(200,batch_dim,2)
-# for i in range(200):
-#     data[i,:,:] = mu[i%4,:,:] + (A[i%4,:,:,:]@torch.randn(batch_dim,dim,1)).squeeze(-1) + torch.randn(batch_dim,dim)/8.0
-
-# dist = NormalInverseWishart(torch.ones(batch_dim,nc),torch.zeros(batch_dim,nc,dim),4.0*torch.ones(batch_dim,nc),torch.zeros(batch_dim,nc,dim,dim) + torch.eye(dim))
-# model = Mixture(dist)
-
-# model.update(data.unsqueeze(-2),iters=10,lr=1,verbose=True)
-# plt.scatter(data[:,0,0],data[:,0,1],c=model.assignment().detach().numpy()[:,0])
-# plt.show()
-
-# print('TEST MIXTURE WITH NON-TRIVIAL EVENT SHAPE')
-# ndim = 3
-# dist = NormalInverseWishart(torch.ones(batch_dim,nc,ndim),torch.zeros(batch_dim,nc,ndim,dim),4.0*torch.ones(batch_dim,nc,ndim),torch.zeros(batch_dim,nc,ndim,dim,dim) + torch.eye(dim)).to_event(1)
-# model = Mixture(dist)
-# data = data.unsqueeze(-3).unsqueeze(-3)
-# model.update(data,iters=10,lr=1,verbose=True)
 
 
 

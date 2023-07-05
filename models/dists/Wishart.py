@@ -40,8 +40,8 @@ class Wishart():
         return (nu.unsqueeze(-1) - torch.arange(self.dim)/2.0).digamma().sum(-1)
 
     def ss_update(self,SExx,n,lr=1.0):        
-        idx = n<1
-        SExx[idx] =0.0
+        idx = n>1
+        SExx = SExx*(idx).unsqueeze(-1).unsqueeze(-1)
         self.invU = (self.invU_0 + SExx)*lr + (1-lr)*self.invU
         self.nu = (self.nu_0 + n)*lr + (1-lr)*self.nu
         self.U = self.invU.inverse()
@@ -129,6 +129,8 @@ class Wishart_eigh():
         return (nu.unsqueeze(-1) - torch.arange(self.dim)/2.0).digamma().sum(-1)
 
     def ss_update(self,SExx,n,lr=1.0):
+        idx = n>1
+        SExx = SExx*(idx).unsqueeze(-1).unsqueeze(-1)
         invU = (self.invU_0 + SExx)*lr + (1-lr)*self.invU
         self.nu = (self.nu_0 + n)*lr + (1-lr)*self.nu
         self.d, self.v = torch.linalg.eigh(0.5*invU+0.5*invU.transpose(-2,-1))  # recall v@d@v.transpose(-2,-1) = invU 
