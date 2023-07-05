@@ -102,11 +102,11 @@ class DMBD(LinearDynamicalSystems):
 
         print("ELBO Calculation is Approximate!!!  Not Guaranteed to increase!!!")
 
-    def log_likelihood_function(self,y,r):
+    def log_likelihood_function(self,Y,R):
         # y must be unsqueezed so that it has a singleton in the role dimension
         # Elog_like_X_given_pY returns invSigma, invSigmamu, Residual averaged over role assignments, but not over observations
         unsdim = self.obs_model.event_dim + 2
-        invSigma, invSigmamu, Residual = self.obs_model.Elog_like_X_given_pY((Delta(y.unsqueeze(-unsdim)),r.unsqueeze(-unsdim))) 
+        invSigma, invSigmamu, Residual = self.obs_model.Elog_like_X_given_pY((Delta(Y.unsqueeze(-unsdim)),R.unsqueeze(-unsdim))) 
         return  invSigma.sum(-unsdim,True), invSigmamu.sum(-unsdim,True), Residual.sum(-unsdim+2,True)
 
 
@@ -463,6 +463,6 @@ class animate_results():
 
         self.fig = plt.figure(figsize=(7,7))
         self.ax = plt.axes(xlim=self.xlim,ylim=self.ylim)
-        self.scatter=self.ax.scatter([], [], cmap = cm.rainbow, c=[], vmin=0.0, vmax=1.0)
+        self.scatter=self.ax.scatter([], [], cmap = cm.rainbow_r, c=[], vmin=0.0, vmax=1.0)
         ani = FuncAnimation(self.fig, self.animation_function, frames=range(fig_data.shape[0]*fig_data.shape[1]), fargs=(fig_data,fig_assignments,fig_confidence,), interval=5).save(self.f,writer= FFMpegWriter(fps=self.fps) )
         plt.show()
