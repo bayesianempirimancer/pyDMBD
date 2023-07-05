@@ -171,3 +171,4 @@ For those interested in the nitty gritty. The logic of the algorithm is based up
                   self.update_obs_parms(y, r, lr=lr)
                   self.update_latents(y,u,r)  
                   print('ELBO = ',self.ELBO())
+                  self.update_latent_parms(p=None,lr = lr)  
