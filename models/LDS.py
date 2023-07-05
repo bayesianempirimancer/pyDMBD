@@ -94,7 +94,6 @@ class LinearDynamicalSystems():
             u=u.expand(sample_shape + self.batch_shape + (self.control_dim,1))
             r=r.expand(sample_shape + self.batch_shape + self.obs_shape[:-1]+(self.regression_dim,1))
 
-
         for i in range(len(self.offset)):
             u=u.unsqueeze(-3)
 
@@ -185,7 +184,7 @@ class LinearDynamicalSystems():
         if self.px is None:
             self.px = MultivariateNormal_vector_format(mu = torch.zeros(y.shape[:-2]+(self.hidden_dim,1),requires_grad=False))
 
-        self.px.invSigma, self.px.invSigmamu, self.px.Sigma, self.px.mu, Sigma_t_tp1, Sigma_x0_x0, SE_x0, logZ, logZ_b = self.forward_backward_loop(y,u,r)  # updates and stores self.px
+        Sigma_t_tp1, Sigma_x0_x0, SE_x0, logZ, logZ_b = self.forward_backward_loop(y,u,r)  # updates and stores self.px
 
         # compute sufficient statistics $ note that these sufficient statistics are only integrated over time
         SE_x0_x0 = ((Sigma_x0_x0 + SE_x0 @ SE_x0.transpose(-2,-1)))
@@ -209,10 +208,15 @@ class LinearDynamicalSystems():
         SE_y_r = ((y@r.transpose(-1,-2))).sum(0)
 
         sample_shape = y.shape[1:-self.event_dim-self.batch_dim-1]
-        self.T = y.shape[0]*torch.ones(sample_shape + self.batch_shape + self.offset,requires_grad =False)
-        self.N = torch.ones(sample_shape + self.batch_shape + self.offset,requires_grad =False)
+
+        # Make y,r,u covariance batch consistent (so that torch.cat works)
+        SE_y_r = SE_y_r.expand(sample_shape + self.batch_shape + self.obs_shape + (self.regression_dim,))
+        SE_u_u = SE_u_u.expand(sample_shape + self.batch_shape + self.offset + (self.control_dim,self.control_dim))
+        SE_r_r = SE_r_r.expand(sample_shape + self.batch_shape + self.obs_shape[:-1] + (self.regression_dim,self.regression_dim))
 
         # store sufficient statistics (should have sample_shape without Time)
+        self.T = y.shape[0]*torch.ones(sample_shape + self.batch_shape + self.offset,requires_grad =False)
+        self.N = torch.ones(sample_shape + self.batch_shape + self.offset,requires_grad =False)
         self.SE_x_x = SE_x_x
         self.SE_x0_x0 = SE_x0_x0
         self.SE_x0 = SE_x0
@@ -356,42 +360,44 @@ class LinearDynamicalSystems():
         logZ = torch.zeros(sample_shape + self.batch_shape + self.offset, requires_grad=False)
         logZ_b = None
 
-        invSigmamu = torch.zeros(sample_shape + self.batch_shape + self.offset + (self.hidden_dim,1),requires_grad=False)
-        invSigma=torch.zeros(sample_shape + self.batch_shape + self.offset +(self.hidden_dim,self.hidden_dim),requires_grad=False)
-        Sigma = torch.zeros(sample_shape + self.batch_shape + self.offset +(self.hidden_dim,self.hidden_dim),requires_grad=False)
-        mu = torch.zeros(sample_shape + self.batch_shape + self.offset +(self.hidden_dim,1),requires_grad=False)
+        self.px.invSigmamu = torch.zeros(sample_shape + self.batch_shape + self.offset + (self.hidden_dim,1),requires_grad=False)
+        self.px.invSigma=torch.zeros(sample_shape + self.batch_shape + self.offset +(self.hidden_dim,self.hidden_dim),requires_grad=False)
+        self.px.Sigma = torch.zeros(sample_shape + self.batch_shape + self.offset +(self.hidden_dim,self.hidden_dim),requires_grad=False)
+        self.px.mu = torch.zeros(sample_shape + self.batch_shape + self.offset +(self.hidden_dim,1),requires_grad=False)
 
-        invSigma[-1] = self.x0.EinvSigma() # sample x batch x by hidden_dim by hidden_dim
-        invSigmamu[-1] = self.x0.EinvSigmamu().unsqueeze(-1) # sample by batch x by hidden_dim by 1
+        self.px.invSigma[-1] = self.x0.EinvSigma() # sample x batch x by hidden_dim by hidden_dim
+        self.px.invSigmamu[-1] = self.x0.EinvSigmamu().unsqueeze(-1) # sample by batch x by hidden_dim by 1
         Residual = - 0.5*self.x0.EXTinvUX() + 0.5*self.x0.ElogdetinvSigma() - 0.5*np.log(2*np.pi)*self.hidden_dim
         Sigma_t_tp1 = torch.zeros(sample_shape + self.batch_shape + self.offset +(self.hidden_dim,self.hidden_dim),requires_grad=False)
             # Note that initially Sigma_t_tp1 is a holding place for SigmaStar_t which is called Sigma_tm1_tm1 in the forward step
-        invSigma_like, invSigmamu_like, Residual_like = self.log_likelihood_function(y,r)
 
         for t in range(T_max):
-            invSigma[t], invSigmamu[t], Residual, logZ[t], Sigma_t_tp1[t-1] = self.forward_step(invSigma[t-1], invSigmamu[t-1], Residual, invSigma_like[t], invSigmamu_like[t], Residual_like[t], u[t])
+            invSigma_like, invSigmamu_like, Residual_like = self.log_likelihood_function(y[t],r[t])
+            self.px.invSigma[t], self.px.invSigmamu[t], Residual, logZ[t], Sigma_t_tp1[t-1] = self.forward_step(self.px.invSigma[t-1], self.px.invSigmamu[t-1], Residual, invSigma_like, invSigmamu_like, Residual_like, u[t])
 
         # now go backwards
 
-        Sigma[-1] = invSigma[-1].inverse()
-        mu[-1] = Sigma[-1] @ invSigmamu[-1]
+        self.px.Sigma[-1] = self.px.invSigma[-1].inverse()
+        self.px.mu[-1] = self.px.Sigma[-1] @ self.px.invSigmamu[-1]
 
-        invGamma = torch.zeros(invSigma.shape[1:],requires_grad=False)
-        invGammamu = torch.zeros(invSigmamu.shape[1:],requires_grad=False)
+        invGamma = torch.zeros(self.px.invSigma.shape[1:],requires_grad=False)
+        invGammamu = torch.zeros(self.px.invSigmamu.shape[1:],requires_grad=False)
         # Residual = torch.zeros(Residual.shape,requires_grad=False)
         # logZ_b = torch.zeros(logZ.shape,requires_grad=False)
 
         for t in range(T_max-2,-1,-1):
-            Sigma_t_tp1[t] = Sigma_t_tp1[t] @ self.QA_xp_x.transpose(-2,-1) @ (invGamma + invSigma_like[t+1] + self.invQ - self.QA_xp_x@Sigma_t_tp1[t]*self.QA_xp_x.transpose(-2,-1)).inverse()
-            invGamma, invGammamu = self.backward_step(invGamma, invGammamu, invSigma_like[t+1], invSigmamu_like[t+1],u[t+1])
+            invSigma_like, invSigmamu_like, Residual_like = self.log_likelihood_function(y[t+1],r[t+1])
+            Sigma_t_tp1[t] = Sigma_t_tp1[t] @ self.QA_xp_x.transpose(-2,-1) @ (invGamma + invSigma_like + self.invQ - self.QA_xp_x@Sigma_t_tp1[t]*self.QA_xp_x.transpose(-2,-1)).inverse()
+            invGamma, invGammamu = self.backward_step(invGamma, invGammamu, invSigma_like, invSigmamu_like,u[t+1])
 #            invGamma, invGammamu, Residual, logZ_b[t] = self.backward_step_with_Residual(invGamma, invGammamu, Residual, invSigma_like[t+1], invSigmamu_like[t+1],Residual_like[t+1],u[t+1])
-            Sigma[t], mu[t], invSigma[t], invSigmamu[t] = self.forward_backward_combiner(invSigma[t], invSigmamu[t], invGamma, invGammamu )
+            self.px.Sigma[t], self.px.mu[t], self.px.invSigma[t], self.px.invSigmamu[t] = self.forward_backward_combiner(self.px.invSigma[t], self.px.invSigmamu[t], invGamma, invGammamu )
 
         Sigma_t_tp1[-1] = Sigma_t_tp1[-1] @ self.QA_xp_x.transpose(-2,-1) @ (invGamma + invSigma_like[0] + self.invQ - self.QA_xp_x@Sigma_t_tp1[-1]*self.QA_xp_x.transpose(-2,-1)).inverse()#uses invSigma from tp1 which we probably should have stored 
-        invGamma, invGammamu = self.backward_step(invGamma, invGammamu, invSigma_like[0], invSigmamu_like[0],u[0])
+        invSigma_like, invSigmamu_like, Residual_like = self.log_likelihood_function(y[0],r[0])
+        invGamma, invGammamu = self.backward_step(invGamma, invGammamu, invSigma_like, invSigmamu_like,u[0])
 #        invGamma, invGammamu, Residual, logZ_b[-1] = self.backward_step_with_Residual(invGamma, invGammamu, Residual, invSigma_like[0], invSigmamu_like[0],Residual_like[0],u[0])
         Sigma_x0_x0 = (invGamma+self.x0.EinvSigma()).inverse()   # posterior parameters for t
         mu_x0 = Sigma_x0_x0 @ (invGammamu + self.x0.EinvSigmamu().unsqueeze(-1))
 
-        return invSigma, invSigmamu, Sigma, mu, Sigma_t_tp1, Sigma_x0_x0, mu_x0, logZ, logZ_b
+        return Sigma_t_tp1, Sigma_x0_x0, mu_x0, logZ, logZ_b
 

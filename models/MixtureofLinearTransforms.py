@@ -37,3 +37,5 @@ class MixtureofLinearTransforms(Mixture):
 
     def forward(self,X):
         return self.predict(X)
+
+

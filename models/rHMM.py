@@ -6,6 +6,7 @@ from .MultiNomialLogisticRegression import MultiNomialLogisticRegression as MNLR
 class rHMM():
 
     def __init__(self, obs_dist, p, transition_mask=None):        
+        print('work in progress:  fix transition_loggoemean and add mask')
         self.obs_dist = obs_dist
         # assume that the first dimension the batch_shape is the dimension of the HMM
         self.hidden_dim = obs_dist.batch_shape[-1]
