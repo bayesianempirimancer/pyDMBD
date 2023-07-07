@@ -1,4 +1,3 @@
-
 import torch
 import numpy as np
 from .ARHMM import ARHMM_prXRY
@@ -85,7 +84,7 @@ class DMBD(LinearDynamicalSystems):
             role_mask = role_mask.unsqueeze(0)
         else:   
             self.obs_model = ARHMM_prXRY(role_dim, obs_dim, hidden_dim, regression_dim, batch_shape = batch_shape, X_mask = B_mask.sum(-2,True)>0,pad_X=False)
-        self.obs_model.transition.alpha_0 = model.obs_model.transition.alpha_0 + 10*torch.eye(role_dim,requires_grad=False)
+        self.obs_model.transition.alpha_0 = self.obs_model.transition.alpha_0 + 10*torch.eye(role_dim,requires_grad=False)
         self.obs_model.transition.alpha_0 = self.obs_model.transition.alpha_0*role_mask
         self.obs_model.transition_mask = role_mask
         self.obs_model.transition.alpha = self.obs_model.transition.alpha*role_mask
