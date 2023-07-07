@@ -21,7 +21,7 @@ data = torch.cat((data[...,0,:],data[...,1,:],data[...,2,:]),dim=-1).unsqueeze(-
 data = data - data.mean((0,1,2),True)
 
 
-model = DMBD(obs_shape=data.shape[-2:],role_dims=(4,4,4),hidden_dims=(4,4,4),batch_shape=(),regression_dim = -1, control_dim=0,number_of_objects=1)
+model = DMBD(obs_shape=data.shape[-2:],role_dims=(4,4,4),hidden_dims=(3,3,3),batch_shape=(),regression_dim = 0, control_dim=0,number_of_objects=1)
 model.obs_model.ptemp = 6.0
 #model.update(data,None,None,iters=1,lr=1)
 iters = 10
