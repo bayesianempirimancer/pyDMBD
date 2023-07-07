@@ -1,11 +1,10 @@
 # Variational Bayesian Expectation Maximization for linear regression and mixtures of linear models
 # with Gaussian observations 
-
 import torch
 import numpy as np
 from .Wishart import Wishart
+from .utils import matrix_utils
 from .MultivariateNormal_vector_format import MultivariateNormal_vector_format
-from .utils.matrix_utils import matrix_utils
 
 class MatrixNormalWishart():
     # Conugate prior for linear regression coefficients
@@ -63,7 +62,7 @@ class MatrixNormalWishart():
 
         if mask is not None:
             if pad_X:
-                self.mask = torch.cat((mask,torch.ones(mask.shape[:-1]+(1,),requires_grad=False)>0),dim=-1)
+                self.mask = torch.cat((self.mask,torch.ones(self.mask.shape[:-1]+(1,),requires_grad=False)>0),dim=-1)
             self.mu_0 = self.mu_0*self.mask
             self.mu = self.mu*self.mask
 
@@ -72,7 +71,7 @@ class MatrixNormalWishart():
             return self
         self.event_dim = self.event_dim + n
         self.batch_dim = self.batch_dim - n 
-        self.event_shape = self.batch_shape[-n:] + self.event_shape 
+        self.event_shape = self.batch_shape[-n:] + self.event_shape
         self.batch_shape = self.batch_shape[:-n]
         self.invU.to_event(n)
         return self
@@ -90,7 +89,7 @@ class MatrixNormalWishart():
             invV = self.invV_0 + SExx
             muinvV = self.mu_0@self.invV_0 + SEyx
             mu = torch.linalg.solve(invV,muinvV.transpose(-2,-1)).transpose(-2,-1)
-            # mu = muinvV @ invV.inverse()
+            # mu = muinvV@invV.inverse()
 
         if self.mask is not None:  # Assumes mask is same for whole batch
             V = invV.inverse()
@@ -103,7 +102,7 @@ class MatrixNormalWishart():
             mu = mu - U@gamma@V
             mu = mu*self.mask
 
-        SEyy = SEyy - mu@invV@mu.transpose(-2,-1) 
+        SEyy = SEyy - mu@invV@mu.transpose(-2,-1)
         SEyy = SEyy + self.mu_0@self.invV_0@self.mu_0.transpose(-2,-1)
         self.invU.ss_update(SEyy,n,lr)
         self.invV = (invV-self.invV)*lr + self.invV
@@ -113,10 +112,10 @@ class MatrixNormalWishart():
             self.mu = self.mu*self.mask
 
 #        self.invV_d, self.invV_v = torch.linalg.eigh(self.invV) 
-#        self.V = self.invV_v@(1.0/self.invV_d.unsqueeze(-1)*self.invV_v.transpose(-2,-1))        
+#        self.V = self.invV_v@(1.0/self.invV_d.unsqueeze(-1)*self.invV_v.transpose(-2,-1))
 #        self.logdetinvV = self.invV_d.log().sum(-1)
-        self.V=self.invV.inverse()
-        self.logdetinvV = self.invV.logdet()  
+        self.V = self.invV.inverse()
+        self.logdetinvV = self.invV.logdet()
 
         if self.X_mask is not None:
             self.V = self.V * self.X_mask * self.X_mask.transpose(-2,-1)
@@ -153,7 +152,7 @@ class MatrixNormalWishart():
             self.ss_update(SExx,SEyx,SEyy,n,lr)
             
         else:
-            p=p.view(p.shape + (1,)*self.event_dim)
+            p=p.view(p.shape + self.event_dim*(1,))
             SExx = (pX.EXXT()*p).sum(0)
             SEyy = (pY.EXXT()*p).sum(0)
             SEyx = ((pY.EX()@pX.EX().transpose(-2,-1))*p).sum(0)
@@ -178,14 +177,10 @@ class MatrixNormalWishart():
             self.ss_update(SExx,SEyx,SEyy,p.view(p.shape[:-2]),lr)
 
     def raw_update(self,X,Y,p=None,lr=1.0):
-        # Assumes that X and Y are encoded as vectors, i.e. the terminal dimensions of X are (p,1)
-        # and the terminal dimension of Y is (n,1).  This is to make things consistent given the 
-        # minimal event_dim for this distribution is 2.  
         if self.pad_X:
             X = torch.cat((X,torch.ones(X.shape[:-2]+(1,1),requires_grad=False)),dim=-2)
-
         if p is None: 
-            sample_shape = X.shape[:-self.event_dim-self.batch_dim]
+            sample_shape = X.shape[:-self.event_dim-self.batch_dim+1]
             SExx = X@X.transpose(-2,-1)
             SEyy = Y@Y.transpose(-2,-1)
             SEyx = Y@X.transpose(-2,-1)
@@ -199,8 +194,7 @@ class MatrixNormalWishart():
             self.ss_update(SExx,SEyx,SEyy,n,lr)
             
         else:
-            for i in range(self.event_dim):
-                p=p.unsqueeze(-1)
+            p = p.view(p.shape+self.event_dim*(1,))
             SExx = X@X.transpose(-2,-1)*p
             SEyy = Y@Y.transpose(-2,-1)*p
             SEyx = Y@X.transpose(-2,-1)*p
@@ -209,7 +203,7 @@ class MatrixNormalWishart():
                 SEyy = SEyy.sum(0)
                 SEyx = SEyx.sum(0)
                 p=p.sum(0)
-            self.ss_update(SExx,SEyx,SEyy,p.squeeze(-1).squeeze(-1),lr)
+            self.ss_update(SExx,SEyx,SEyy,p.view(p.shape[:-2]),lr)
 
     def KLqprior(self):
 
@@ -219,13 +213,9 @@ class MatrixNormalWishart():
         KL = KL + 0.5*self.n*(self.invV_0*self.V).sum(-1).sum(-1)
         temp = ((self.mu-self.mu_0).transpose(-2,-1)@self.invU.EinvSigma()@(self.mu-self.mu_0)) 
         KL = KL + 0.5*(self.invV_0*temp).sum(-1).sum(-1)
-        
         for i in range(self.event_dim-2):
             KL = KL.sum(-1)
         return KL + self.invU.KLqprior()
-
-    def logZ(self):
-        logZ = 0.5*self.n*self.p*np.log(2.0*np.pi) + self.invU.logZ()
 
     def Elog_like(self,X,Y):  # expects X to be batch_shape* + event_shape[:-1] by p 
                               #     and Y to be batch_shape* + event_shape[:-1] by n
@@ -233,12 +223,12 @@ class MatrixNormalWishart():
         if self.pad_X:
             X = torch.cat((X,torch.ones(X.shape[:-2]+(1,1),requires_grad=False)),dim=-2)
         temp = Y-self.mu@X
-        out = - 0.5*(temp.transpose(-2,-1)@self.invU.EinvSigma()@temp).squeeze(-1).squeeze(-1) - 0.5*self.n*(X.transpose(-2,-1)@self.V@X).squeeze(-1).squeeze(-1)
-        out = out - 0.5*self.n*np.log(2.0*np.pi) + 0.5*self.invU.ElogdetinvSigma()
-
+        ELL = - 0.5*(temp.transpose(-2,-1)@self.invU.EinvSigma()@temp) - 0.5*self.n*(X.transpose(-2,-1)@self.V@X)
+        ELL = ELL.view(ELL.shape[:-2]) - 0.5*self.n*np.log(2.0*np.pi)
+        ELL = ELL + 0.5*self.invU.ElogdetinvSigma()
         for i in range(self.event_dim-2):
-            out = out.sum(-1)
-        return out
+            ELL = ELL.sum(-1)
+        return ELL
 
     def forward(self,pX):
         if self.pad_X:
@@ -258,26 +248,11 @@ class MatrixNormalWishart():
 
         pY = MultivariateNormal_vector_format(Sigma = Sigma_y_y, mu = mu_y, invSigmamu = invSigmamu_y)
         return pY
-        
-    def backward(self,pY):  #  Incorrect needs to use matrix inversion instead, i.e. 
-        print('Lazy version of backward routine does not use matrix inversion')
-        if self.pad_X:
-            invSigma_x_x = self.EXTinvUX()[...,:-1,:-1]
-            invSigmamu_x = self.EXTinvU()[...,:-1,:]@pY.mean() - self.EXTinvUX()[...,:-1,-1:]
-            Residual = -0.5*(pY.EXXT()*self.EinvSigma()).sum(-1).sum(-1) - 0.5*self.n*np.log(2.0*np.pi) + 0.5*self.ElogdetinvSigma()
-            Residual = Residual - 0.5*self.EXTinvUX()[...,-1,-1]
-        else:
-            invSigma_x_x = self.EXTinvUX()
-            invSigmamu_x = self.EXTinvU()@pY.mean()
-            Residual = -0.5*(pY.EXXT()*self.EinvSigma()).sum(-1).sum(-1) - 0.5*self.n*np.log(2.0*np.pi) + 0.5*self.ElogdetinvSigma()
-    
-        px = MultivariateNormal_vector_format(invSigma=invSigma_x_x, invSigmamu = invSigmamu_x)
-        return px, Residual - px.Res()
 
     def Elog_like_given_pX_pY(self,pX,pY):  # This assumes that X is a distribution with the ability to produce 
                                        # expectations of the form EXXT, and EX with dimensions matching Y, i.e. EX.shape[-2:] is (p,1)
 
-        if self.pad_X:    ## inefficient recode this to avoid using cat...
+        if self.pad_X:         #inefficient recode to avoid using torch.cat
             EX = pX.mean()
             EXXT = torch.cat((pX.EXXT(),EX),dim=-1)
             EX = torch.cat((EX,torch.ones(EX.shape[:-2]+(1,1))),dim=-2)
@@ -286,18 +261,16 @@ class MatrixNormalWishart():
             EX = pX.mean()
             EXXT = pX.EXXT()
 
-        out = -0.5*(pY.EXXT()*self.EinvSigma()).sum(-1).sum(-1)
-        out = out + (pY.mean().transpose(-2,-1)@self.EinvUX()@EX).squeeze(-1).squeeze(-1)
-        out = out + -0.5*(EXXT*self.EXTinvUX()).sum(-1).sum(-1)
-        out = out + -0.5*self.n*np.log(2.0*np.pi) + 0.5*self.invU.ElogdetinvSigma()
-
-        return out
-
+        ELL = -0.5*(pY.EXXT()*self.EinvSigma()).sum(-1).sum(-1)
+        ELL = ELL + (pY.mean().transpose(-2,-1)@self.EinvUX()@EX).squeeze(-1).squeeze(-1)
+        ELL = ELL - 0.5*(EXXT*self.EXTinvUX()).sum(-1).sum(-1)
+        ELL = ELL - 0.5*self.n*np.log(2.0*np.pi) + 0.5*self.invU.ElogdetinvSigma()
+        return ELL
 
     def Elog_like_X(self,Y):
         if self.pad_X:
             invSigma_x_x = self.EXTinvUX()[...,:-1,:-1]
-            invSigmamu_x = self.EXTinvU()[...,:-1,:]@Y + self.EXTinvUX()[...,:-1,-1:]
+            invSigmamu_x = self.EXTinvU()[...,:-1,:]@Y - self.EXTinvUX()[...,:-1,-1:]   #DOUBLECHECK HERE
             Residual = -0.5*(Y.transpose(-2,-1)@self.EinvSigma()@Y).squeeze(-1).squeeze(-1) - 0.5*self.n*np.log(2.0*np.pi) + 0.5*self.ElogdetinvSigma()
             Residual = Residual - 0.5*self.EXTinvUX()[...,-1,-1]
         else:
@@ -307,19 +280,56 @@ class MatrixNormalWishart():
         return invSigma_x_x, invSigmamu_x, Residual
 
     def Elog_like_X_given_pY(self,pY):
-            if self.pad_X:
-                invSigma_x_x = self.EXTinvUX()[...,:-1,:-1]
-                invSigmamu_x = self.EXTinvU()[...,:-1,:]@pY.mean() - self.EXTinvUX()[...,:-1,-1:]
-                Residual = -0.5*(pY.EXXT()*self.EinvSigma()).sum(-1).sum(-1) - 0.5*self.n*np.log(2.0*np.pi) + 0.5*self.ElogdetinvSigma()
-                Residual = Residual - 0.5*self.EXTinvUX()[...,-1,-1]
-            else:
-                invSigma_x_x = self.EXTinvUX()
-                invSigmamu_x = self.EXTinvU()@pY.mean()
-                Residual = -0.5*(pY.EXXT()*self.EinvSigma()).sum(-1).sum(-1) - 0.5*self.n*np.log(2.0*np.pi) + 0.5*self.ElogdetinvSigma()
-            return invSigma_x_x, invSigmamu_x, Residual
+        if self.pad_X:
+            PJ_y_y = pY.EinvSigma() + self.EinvSigma()
+            PJ_y_x = -self.EinvUX()[...,:,:-1]
+            PJ_x_x = self.EXTinvUX()[...,:-1,:-1]
+            PmuJ_y = pY.EinvSigmamu() - self.EinvUX()[...,:,-1:]
+            PmuJ_x = -self.EXTinvUX()[...,:-1,-1:]
+            PJ11 = self.EXTinvUX()[...,-1,-1]
+        else:
+            PJ_y_y = pY.EinvSigma() + self.EinvSigma()
+            PJ_y_x = -self.EinvUX()
+            PJ_x_x = self.EXTinvUX()
+            PmuJ_y = pY.EinvSigmamu()
+            PmuJ_x = 0.0
+            PJ11 = 0.0
+
+        invSigma_y_y, negBinvD, negCinvA, invSigma_x_x = matrix_utils.block_precision_marginalizer(PJ_y_y, PJ_y_x, PJ_y_x.transpose(-2,-1), PJ_x_x)
+        invSigmamu_y = PmuJ_y + negBinvD@PmuJ_x
+        invSigmamu_x = PmuJ_x + negCinvA@PmuJ_y
+
+        Sigma_x_x = invSigma_x_x.inverse()
+        mu_x = Sigma_x_x@invSigmamu_x
+
+        Res = pY.Res() + 0.5*(invSigmamu_y.transpose(-2,-1)@invSigma_y_y.inverse()@invSigmamu_y).squeeze(-1).squeeze(-1) - 0.5*invSigma_y_y.logdet() + 0.5*pY.dim*np.log(2*np.pi) + 0.5*self.ElogdetinvSigma() - 0.5*PJ11
+        return invSigma_x_x, invSigmamu_x, Res + 0.5*(mu_x*invSigmamu_x).sum(-1).sum(-1) - 0.5*invSigma_x_x.logdet() + 0.5*np.log(2*np.pi)*invSigmamu_x.shape[-2]
+
+    def backward(self,pY):  #  Incorrect needs to use matrix inversion instead, i.e. 
+        if self.pad_X:
+            PJ_y_y = pY.EinvSigma() + self.EinvSigma()
+            PJ_y_x = -self.EinvUX()[...,:,:-1]
+            PJ_x_x = self.EXTinvUX()[...,:-1,:-1]
+            PmuJ_y = pY.EinvSigmamu() - self.EinvUX()[...,:,-1:]
+            PmuJ_x = -self.EXTinvUX()[...,:-1,-1:]
+            PJ11 = self.EXTinvUX()[...,-1,-1]
+        else:
+            PJ_y_y = pY.EinvSigma() + self.EinvSigma()
+            PJ_y_x = -self.EinvUX()
+            PJ_x_x = self.EXTinvUX()
+            PmuJ_y = pY.EinvSigmamu()
+            PmuJ_x = torch.zeros(PJ_x_x.shape[:-1] + (1,))
+            PJ11 = torch.tensor(0.0)
+
+        invSigma_y_y, negBinvD, negCinvA, invSigma_x_x = matrix_utils.block_precision_marginalizer(PJ_y_y, PJ_y_x, PJ_y_x.transpose(-2,-1), PJ_x_x)
+        invSigmamu_y = PmuJ_y + negBinvD@PmuJ_x
+        invSigmamu_x = PmuJ_x + negCinvA@PmuJ_y
+
+        px = MultivariateNormal_vector_format(invSigma = invSigma_x_x, invSigmamu = invSigmamu_x)
+        Res = pY.Res() + 0.5*(invSigmamu_y.transpose(-2,-1)@invSigma_y_y.inverse()@invSigmamu_y).squeeze(-1).squeeze(-1) - 0.5*invSigma_y_y.logdet() + 0.5*pY.dim*np.log(2*np.pi) + 0.5*self.ElogdetinvSigma() - 0.5*PJ11
+        return px, Res - px.Res()
 
     def predict(self,X):
-
         if self.pad_X:
             X = torch.cat((X,torch.ones(X.shape[:-2]+(1,1),requires_grad=False)),dim=-2)
         invSigma_y_y = self.EinvSigma()
@@ -330,23 +340,7 @@ class MatrixNormalWishart():
         return mu_y, Sigma_y_y, invSigma_y_y, invSigmamu_y
 
     def predict_given_pX(self,pX):
-        if self.pad_X:
-            invSigma_y_y = self.EinvSigma()
-            invSigma_y_x = -self.EinvUX()[...,:,:-1]
-            invSigma_x_x = self.EXTinvUX()[...,:-1,:-1] + pX.EinvSigma()
-            Sigma_y_y, invSigma_y_ySigma_y_x = matrix_utils.block_matrix_inverse(invSigma_y_y, invSigma_y_x, invSigma_y_x.transpose(-2,-1), invSigma_x_x, block_form = 'left')[0:2]
-            invSigmamu_y = self.EinvUX()[...,:,-1:] + invSigma_y_ySigma_y_x@pX.EinvSigmamu()
-            mu_y = Sigma_y_y@invSigmamu_y 
-        else:    
-            invSigma_y_y = self.EinvSigma()
-            invSigma_y_x = -self.EinvUX()
-            invSigma_x_x = self.EXTinvUX() + pX.EinvSigma()
-            Sigma_y_y, invSigma_y_ySigma_y_x = matrix_utils.block_matrix_inverse(invSigma_y_y, invSigma_y_x, invSigma_y_x.transpose(-2,-1), invSigma_x_x, block_form = 'left')[0:2]
-            invSigmamu_y = invSigma_y_ySigma_y_x@pX.EinvSigmamu()
-            mu_y = Sigma_y_y@invSigmamu_y 
-
-        pY = MultivariateNormal_vector_format(Sigma = Sigma_y_y, mu = mu_y, invSigmamu = invSigmamu_y)
-        return pY
+        return self.forward(pX)
 
     def mean(self):
         return self.mu
@@ -364,8 +358,8 @@ class MatrixNormalWishart():
     def EXTAX(self,A):  # X is n x p, A is p x p
         return self.V*(self.invU.ESigma()*A).sum(-1).sum(-1)  + self.mu.transpose(-2,-1)@A@self.mu
 
-    def EXAXT(self,A):  # A is n x n
-        return self.invU.ESigma()*(self.V*A).sum(-1).sum(-1) + self.mu@A@self.mu.transpose(-2,-1)
+    def EXAXT(self,A):
+        return self.ESigma()*(self.V*A).sum(-1).sum(-1) + self.mu@A@self.mu.transpose(-2,-1) #DOUBLE CHECK HERE
 
     def EXTinvUX(self):
         return self.n * self.V + self.mu.transpose(-1,-2)@self.invU.EinvSigma()@self.mu
@@ -397,102 +391,4 @@ class MatrixNormalWishart():
     def ESigma(self):  
         return self.invU.ESigma()
 
-
-# print('TEST VANILLA Matrix Normal Wishart')
-# dim=3
-# n=2*dim
-# p=5
-# n_samples = 200
-# W = MatrixNormalWishart(torch.zeros(n,p),torch.eye(n),torch.eye(p))
-# w_true = torch.randn(n,p)
-# b_true = torch.randn(n,1)*0
-# X=torch.randn(n_samples,p)
-# Y=torch.zeros(n_samples,n)
-# for i in range(n_samples):
-#     Y[i,:] = X[i:i+1,:]@w_true.transpose(-1,-2) + b_true.transpose(-2,-1) + torch.randn(1)/4.0
-# from matplotlib import pyplot as plt
-# W.raw_update(X.unsqueeze(-1),Y.unsqueeze(-1))
-# Yhat = (W.mu@X.unsqueeze(-1)).squeeze(-1)
-# plt.scatter(Y,Yhat)
-# plt.show()
-
-# print('TEST VANILLA Matrix Normal Wishart with X_mask')
-# n=2
-# p=10
-# n_samples = 200
-# W = MatrixNormalWishart(torch.zeros(n,p),torch.eye(n),torch.eye(p))
-# w_true = torch.randn(n,p)/np.sqrt(p)
-# X_mask = w_true.abs().sum(-2)<1.0
-# w_true = w_true*X_mask.unsqueeze(-2)
-# b_true = torch.randn(n,1)*0
-# X=torch.randn(n_samples,p)
-# Y=torch.zeros(n_samples,n)
-# for i in range(n_samples):
-#     Y[i,:] = X[i:i+1,:]@w_true.transpose(-1,-2) + b_true.transpose(-2,-1) + torch.randn(1)/4.0
-# from matplotlib import pyplot as plt
-# W.raw_update(X.unsqueeze(-1),Y.unsqueeze(-1))
-# Yhat = (W.mu@X.unsqueeze(-1)).squeeze(-1)
-# plt.scatter(Y,Yhat)
-# plt.show()
-
-
-
-# print('TEST VANILLA Matrix Normal Wishart with pad_X = True')
-# dim=3
-# n=2*dim
-# p=4
-# n_samples = 200
-# W = MatrixNormalWishart(torch.zeros(n,p),torch.eye(n),torch.eye(p),pad_X=True)
-# w_true = torch.randn(n,p)
-# b_true = torch.randn(n,1)*0
-# X=torch.randn(n_samples,p)
-# Y=torch.zeros(n_samples,n)
-# for i in range(n_samples):
-#     Y[i,:] = X[i:i+1,:]@w_true.transpose(-1,-2) + b_true.transpose(-2,-1) + torch.randn(1)/4.0
-# from matplotlib import pyplot as plt
-# W.raw_update(X.unsqueeze(-1),Y.unsqueeze(-1))
-# Yhat = W.predict(X.unsqueeze(-1))[0]
-# plt.scatter(Y,Yhat)
-# plt.show()
-
-
-
-# print('TEST vanilla with pX and pY')
-# W2 = MatrixNormalWishart(torch.zeros(n,p),torch.eye(n),torch.eye(p))
-# from .Delta import Delta
-# pX = Delta(X.unsqueeze(-1)).to_event(1)
-# pY = Delta(Y.unsqueeze(-1)).to_event(1)
-# W2.update(pX,pY)
-# Yhat = (W2.mu@X.unsqueeze(-1)).squeeze(-1)
-# plt.scatter(Y,Yhat)
-# plt.show()
-
-# pX = MultivariateNormal_vector_format(invSigmamu=X.unsqueeze(-1),invSigma=torch.zeros(n_samples,p,p)+torch.eye(p))
-# pY = MultivariateNormal_vector_format(invSigmamu=Y.unsqueeze(-1),invSigma=torch.zeros(n_samples,n,n)+torch.eye(n))
-# W2.update(pX,pY)
-# Yhat = (W2.mu@X.unsqueeze(-1)).squeeze(-1)
-# plt.scatter(Y,Yhat)
-# plt.show()
-
-
-# print('TEST non-trivial observation shape for Matrix Normal Wishart')
-# dim = 3
-# n=2
-# p=5
-# W2 = MatrixNormalWishart(torch.zeros(dim,n,p),torch.zeros(dim,n,n)+torch.eye(n),torch.zeros(dim,p,p)+torch.eye(p))
-# W2.to_event(1)
-# w_true = torch.randn(n*dim,p)
-# b_true = torch.randn(n*dim,1)*0
-# X=torch.randn(n_samples,p)
-# Y=torch.zeros(n_samples,dim*n)
-# for i in range(n_samples):
-#     Y[i] = X[i:i+1]@w_true.transpose(-1,-2) + b_true.transpose(-2,-1) + torch.randn(1)/4.0
-
-# X = X.unsqueeze(-2)
-# Y = Y.reshape(n_samples,dim,n)
-# from matplotlib import pyplot as plt
-# W2.raw_update(X.unsqueeze(-1),Y.unsqueeze(-1))
-# Yhat = (W2.mu@X.unsqueeze(-1)).squeeze(-1)
-# plt.scatter(Y,Yhat)
-# plt.show()
 
