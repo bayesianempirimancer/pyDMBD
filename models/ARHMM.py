@@ -8,17 +8,25 @@ from .dists import MatrixNormalWishart
 from .dists import MultivariateNormal_vector_format
 from .dists.utils import matrix_utils
 from .HMM import HMM
+from .dists import Delta
 
 class ARHMM(HMM):
     def __init__(self,dim,n,p,batch_shape = (),pad_X=True):
         dist = MatrixNormalWishart(torch.zeros(batch_shape + (dim,n,p),requires_grad=False),pad_X=pad_X)
         super().__init__(dist)
         
-    def obs_logits(self,XY):
-        return self.obs_dist.Elog_like(XY[0],XY[1])
+    def obs_logits(self,XY,t=None):
+        if t is not None:
+            return self.obs_dist.Elog_like(XY[0][t],XY[1][t])
+        else:
+            return self.obs_dist.Elog_like(XY[0],XY[1])
 
     def update_obs_parms(self,XY,lr):
         self.obs_dist.raw_update(XY[0],XY[1],self.p,lr)
+
+    # def update_states(self,XY):
+    #     T = XY[0].shape[0]
+    #     super().update_states(XY,T)                    
 
     def Elog_like_X_given_Y(self,Y):
         invSigma_x_x, invSigmamu_x, Residual = self.obs_dist.Elog_like_X_given_Y(Y)
@@ -48,7 +56,7 @@ class ARHMM_prXY(HMM):
         return invSigma_x_x, invSigmamu_x, Residual
 
 
-class ARHMM_prXRY(HMM):
+class ARHMM_prXRY(HMM):   # Assumes that R and Y are observed
     def __init__(self,dim,n,p1,p2,batch_shape=(),mask=None,X_mask = None, pad_X=False):
         self.p1 = p1
         self.p2 = p2
@@ -64,20 +72,20 @@ class ARHMM_prXRY(HMM):
 
         Sigma = matrix_utils.block_diag_matrix_builder(XRY[0].ESigma(),torch.zeros(XRY[0].shape[:-2]+(self.p2,self.p2),requires_grad=False))
         mu = torch.cat((XRY[0].mean(),XRY[1]),dim=-2)
-        return self.obs_dist.Elog_like_given_pX_pY(MultivariateNormal_vector_format(mu=mu,Sigma=Sigma),XRY[2])
+        return self.obs_dist.Elog_like_given_pX_pY(MultivariateNormal_vector_format(mu=mu,Sigma=Sigma),Delta(XRY[2]))
 
-    def update_obs_parms(self,XRY,lr):
+    def update_obs_parms(self,XRY,lr):  #only uses expectations
         Sigma = matrix_utils.block_diag_matrix_builder(XRY[0].ESigma(),torch.zeros(XRY[0].shape[:-2]+(self.p2,self.p2),requires_grad=False))
         mu = torch.cat((XRY[0].mean(),XRY[1]),dim=-2)
         prXR = MultivariateNormal_vector_format(mu=mu,Sigma=Sigma)
-        self.obs_dist.update(prXR,XRY[2],self.p,lr)
+        self.obs_dist.update(prXR,Delta(XRY[2]),self.p,lr)
 
-    def Elog_like_X_given_pY(self,pYR):
-        invSigma_xr_xr, invSigmamu_xr, Residual = self.obs_dist.Elog_like_X_given_pY(pYR[0])
+    def Elog_like_X(self,YR):
+        invSigma_xr_xr, invSigmamu_xr, Residual = self.obs_dist.Elog_like_X(YR[0])
         invSigma_x_x = invSigma_xr_xr[...,:self.p1,:self.p1]
-        invSigmamu_x = invSigmamu_xr[...,:self.p1,:] - invSigma_xr_xr[...,:self.p1,self.p1:]@pYR[1]
-        Residual = Residual - 0.5*(invSigma_xr_xr[...,self.p1:,self.p1:]*(pYR[1]*pYR[1].transpose(-2,-1))).sum(-1).sum(-1)
-        Residual = Residual + (invSigmamu_xr[...,self.p1:,:]*pYR[1]).sum(-1).sum(-1)
+        invSigmamu_x = invSigmamu_xr[...,:self.p1,:] - invSigma_xr_xr[...,:self.p1,self.p1:]@YR[1]
+        Residual = Residual - 0.5*(invSigma_xr_xr[...,self.p1:,self.p1:]*(YR[1]*YR[1].transpose(-2,-1))).sum(-1).sum(-1)
+        Residual = Residual + (invSigmamu_xr[...,self.p1:,:]*YR[1]).sum(-1).sum(-1)
 
         if self.p is not None:
             invSigma_x_x = (invSigma_x_x*self.p.view(self.p.shape + (1,)*2)).sum(-3)

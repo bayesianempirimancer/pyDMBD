@@ -64,11 +64,43 @@ class HMM():
         return xy + x_shift + y_shift
 
     def forward_step(self,logits,observation_logits):
-        return (logits.unsqueeze(-1) + observation_logits.unsqueeze(-2) + self.transition.loggeomean()).stable_logsumexp(-2)
+        return self.stable_logsumexp(logits.unsqueeze(-1) + observation_logits.unsqueeze(-2) + self.transition.loggeomean(),-2)
     
     def backward_step(self,logits,observation_logits):
-        return (logits.unsqueeze(-2) + observation_logits.unsqueeze(-2) + self.transition.loggeomean()).stable_logsumexp(-1)
+        return self.stable_logsumexp(logits.unsqueeze(-2) + observation_logits.unsqueeze(-2) + self.transition.loggeomean(),-1)
 
+    def forward_backward_steps(self,X,T): 
+        temp = self.obs_logits(X,0)
+        fw_logits = torch.zeros((T,)+temp.shape,requires_grad=False)
+
+        fw_logits[0] = self.stable_logsumexp(self.initial.loggeomean().unsqueeze(-1) + self.transition.loggeomean() + temp.unsqueeze(-2),-2)
+        for t in range(1,T):
+            fw_logits[t] = self.forward_step(fw_logits[t-1],self.obs_logits(X,t))
+        logZ = self.stable_logsumexp(fw_logits[-1],-1,True)
+        fw_logits = fw_logits - logZ
+        logZ = logZ.squeeze(-1)
+
+        SEzz = torch.zeros(fw_logits.shape[1:]+(self.hidden_dim,),requires_grad=False)
+        for t in range(T-2,-1,-1):
+            ### Backward Smoothing
+            temp = fw_logits[t].unsqueeze(-1) + self.transition.loggeomean() 
+            xi_logits = (temp - self.stable_logsumexp(temp,-2,keepdim=True)) + fw_logits[t+1].unsqueeze(-2)
+            fw_logits[t] = self.stable_logsumexp(xi_logits,-1)
+            SEzz = SEzz + (xi_logits - self.stable_logsumexp(xi_logits,(-1,-2), keepdim=True)).exp()
+                        
+        # Now do the initial step
+        temp = self.initial.loggeomean().unsqueeze(-1) + self.transition.loggeomean() 
+        xi_logits = (temp - self.stable_logsumexp(temp,-2,keepdim=True)) + fw_logits[0].unsqueeze(-2)
+        SEz0 = self.stable_logsumexp(xi_logits,-1)
+        SEz0 = (SEz0-self.stable_logsumexp(SEz0,-1,True)).exp()
+        SEzz = SEzz + (xi_logits - self.stable_logsumexp(xi_logits,(-1,-2), keepdim=True)).exp()  
+
+        fw_logits =  ((fw_logits - fw_logits.max(-1,keepdim=True)[0])/self.ptemp).exp()
+        fw_logits = fw_logits/fw_logits.sum(-1,keepdim=True)
+        if fw_logits.isnan().any():
+            print('HMM:  NaN in p')
+        return fw_logits, SEzz, SEz0, logZ  # Note that only Time has been integrated out of sufficient statistics and fw_logits is now p(z_t|x_{0:T-1})
+    
     def forward_backward_logits(self,fw_logits):
         # Assumes that time is in the first dimension of the observation
         # On input fw_logits = observation_logits. 
@@ -79,11 +111,9 @@ class HMM():
 #        fw_logits = torch.zeros(observation_logits.shape,requires_grad=False)
 #        fw_logits[0] = (logits[0] + self.initial.loggeomean().unsqueeze(-1)).logsumexp(-2)
 
-        fw_logits[0] = self.stable_logsumexp(fw_logits[0].unsqueeze(-2) + self.initial.loggeomean().unsqueeze(-1),-2)
-
+        fw_logits[0] = self.stable_logsumexp(self.initial.loggeomean().unsqueeze(-1) + self.transition.loggeomean() + fw_logits[0].unsqueeze(-2),-2)
         for t in range(1,T):
-#            fw_logits[t] = (fw_logits[t-1].unsqueeze(-1) + logits[t]).logsumexp(-2)
-            fw_logits[t] = self.stable_logsumexp(fw_logits[t-1].unsqueeze(-1) + fw_logits[t].unsqueeze(-2) + self.transition.loggeomean(),-2)
+            fw_logits[t] = self.stable_logsumexp(fw_logits[t-1].unsqueeze(-1) + self.transition.loggeomean() + fw_logits[t].unsqueeze(-2),-2)
         logZ = self.stable_logsumexp(fw_logits[-1],-1,True)
         fw_logits = fw_logits - logZ
         logZ = logZ.squeeze(-1)
@@ -93,8 +123,7 @@ class HMM():
             temp = fw_logits[t].unsqueeze(-1) + self.transition.loggeomean() 
             xi_logits = (temp - self.stable_logsumexp(temp,-2,keepdim=True)) + fw_logits[t+1].unsqueeze(-2)
             fw_logits[t] = self.stable_logsumexp(xi_logits,-1)
-            xi_logits = (xi_logits - self.stable_logsumexp(xi_logits,(-1,-2), keepdim=True))
-            SEzz = SEzz + xi_logits.exp()
+            SEzz = SEzz + (xi_logits - self.stable_logsumexp(xi_logits,(-1,-2), keepdim=True)).exp()
                         
         # Now do the initial step
         # Backward Smoothing
@@ -102,8 +131,7 @@ class HMM():
         xi_logits = (temp - self.stable_logsumexp(temp,-2,keepdim=True)) + fw_logits[0].unsqueeze(-2)
         SEz0 = self.stable_logsumexp(xi_logits,-1)
         SEz0 = (SEz0-self.stable_logsumexp(SEz0,-1,True)).exp()
-        xi_logits = (xi_logits - self.stable_logsumexp(xi_logits,(-1,-2), keepdim=True))
-        SEzz = SEzz + xi_logits.exp()
+        SEzz = SEzz + (xi_logits - self.stable_logsumexp(xi_logits,(-1,-2), keepdim=True)).exp()
         # Backward inference
         # bw_logits = bw_logits.unsqueeze(-2) + logits[0]  
         # xi_logits = self.initial.loggeomean().unsqueeze(-1) + bw_logits
@@ -113,13 +141,13 @@ class HMM():
         # SEz0 = (bw_logits - bw_logits.max(-1,keepdim=True)[0]).exp()
         # SEz0 = SEz0/SEz0.sum(-1,True)      
 
-        self.p =  ((fw_logits - fw_logits.max(-1,keepdim=True)[0])/self.ptemp).exp()
-        self.p = self.p/self.p.sum(-1,keepdim=True)
+        fw_logits =  ((fw_logits - fw_logits.max(-1,keepdim=True)[0])/self.ptemp).exp()
+        fw_logits = fw_logits/fw_logits.sum(-1,keepdim=True)
 
-        if self.p.isnan().any():
+        if fw_logits.isnan().any():
             print('HMM:  NaN in p')
 
-        return SEzz, SEz0, logZ  # Note that only Time has been integrated out of sufficient statistics
+        return fw_logits, SEzz, SEz0, logZ  # Note that only Time has been integrated out of sufficient statistics
                                             # and the despite the name fw_logits is posterior probability of states
     def assignment_pr(self):
         return self.p
@@ -127,13 +155,19 @@ class HMM():
     def assignment(self):
         return self.p.argmax(-1)
 
-    def obs_logits(self,X):
-        return self.obs_dist.Elog_like(X)
+    def obs_logits(self,X,t=None):
+        if t is not None:
+            return self.obs_dist.Elog_like(X[t].unsqueeze(-1-self.obs_dist.event_dim))
+        else:
+            return self.obs_dist.Elog_like(X.unsqueeze(-1-self.obs_dist.event_dim))
 
-    def update_states(self,X):
+    def update_states(self,X,T=None):
         # updates states and stores in self.p
         # also updates sufficient statistics of Markov process (self.SEzz, self.SEz0) and self.logZ and self.sumlogZ
-        SEzz, SEz0, logZ = self.forward_backward_logits(self.obs_logits(X))  # recall that time has been integrated out except for p.
+        if T is None:
+            self.p, SEzz, SEz0, logZ = self.forward_backward_logits(self.obs_logits(X))  # recall that time has been integrated out except for p.
+        else:
+            self.p, SEzz, SEz0, logZ = self.forward_backward_steps(X,T)  # recall that time has been integrated out except for p.
         NA = self.p.sum(0) # also integrate out time for NA
         self.logZ = logZ
         while NA.ndim > self.batch_dim + self.event_dim:  # sum out the sample shape
@@ -145,18 +179,18 @@ class HMM():
         self.SEz0 = SEz0
         self.NA=NA
         self.sumlogZ = logZ
-
+        
     def update_markov_parms(self,lr=1.0):
         self.transition.ss_update(self.SEzz,lr)
         self.initial.ss_update(self.SEz0,lr)
 
     def update_obs_parms(self,X,lr=1.0):
-        self.obs_dist.raw_update(X,self.p,lr)
+        self.obs_dist.raw_update(X.unsqueeze(-1-self.obs_dist.event_dim),self.p,lr)
 
-    def update_parms(self,X,lr=1.0):
-        self.transition.ss_update(self.SEzz,lr)
-        self.initial.ss_update(self.SEz0,lr)
-        self.update_obs_parms(X,self.p,lr)
+    # def update_parms(self,X,lr=1.0):
+    #     self.transition.ss_update(self.SEzz,lr)
+    #     self.initial.ss_update(self.SEz0,lr)
+    #     self.update_obs_parms(X,self.p,lr)
 
     def update(self,X,iters=1,lr=1.0,verbose=False):   
 
@@ -173,7 +207,7 @@ class HMM():
                 print('Percent Change in ELBO = %f' % ((ELBO-ELBO_last)/np.abs(ELBO_last)*100))
 
     def Elog_like(self,X):  # assumes that p is up to date
-        ELL = (self.obs_dist.Elog_like(X)*self.p).sum(-1)
+        ELL = (self.obs_dist.Elog_like(X.unsqueeze(-1-self.obs_dist.event_dim))*self.p).sum(-1)
         for i in range(self.event_dim - 1):
             ELL = ELL.sum(-1)
         return ELL        
