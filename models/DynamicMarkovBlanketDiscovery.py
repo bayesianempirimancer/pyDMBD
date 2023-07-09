@@ -60,6 +60,7 @@ class DMBD(LinearDynamicalSystems):
         self.ELBO_save = -torch.inf*torch.ones(1)
         self.iters = 0
         self.px = None
+        self.ELBO_last = -torch.tensor(torch.inf)
 
 
         self.x0 = NormalInverseWishart(torch.ones(batch_shape + offset,requires_grad=False), 
@@ -81,17 +82,19 @@ class DMBD(LinearDynamicalSystems):
 #       line forces the role model to be shared by all observation.  There is no difference ie computation time associaated with this choice
 #       only the memory requirements.  
         if self.unique_obs is True:
-            self.obs_model = ARHMM_prXRY(role_dim, obs_dim, hidden_dim, regression_dim, batch_shape = batch_shape + (n_obs,), X_mask = B_mask.sum(-2,True)>0,pad_X=False).to_event(1)
-            role_mask = role_mask.unsqueeze(0).unsqueeze(0)
+            self.obs_model = ARHMM_prXRY(role_dim, obs_dim, hidden_dim, regression_dim, batch_shape = batch_shape + (n_obs,), X_mask = B_mask.unsqueeze(0).sum(-2,True)>0,pad_X=False).to_event(1)
+            role_mask = role_mask.unsqueeze(0)
         else:   
             self.obs_model = ARHMM_prXRY(role_dim, obs_dim, hidden_dim, regression_dim, batch_shape = batch_shape, X_mask = B_mask.sum(-2,True)>0,pad_X=False)
-            role_mask = role_mask
+#        self.obs_model.transition.alpha_0 = self.obs_model.transition.alpha_0 + 10*torch.eye(role_dim,requires_grad=False)
         self.obs_model.transition.alpha_0 = self.obs_model.transition.alpha_0*role_mask
         self.obs_model.transition_mask = role_mask
         self.obs_model.transition.alpha = self.obs_model.transition.alpha*role_mask
 
-        self.obs_model.obs_dist.invU.invU_0       = self.obs_model.obs_dist.invU.invU_0*torch.tensor(self.role_dims).float().mean()**2
-        self.obs_model.obs_dist.invU.logdet_invU_0= self.obs_model.obs_dist.invU.invU_0.logdet()
+        self.B = self.obs_model.obs_dist
+#        self.B.mu = torch.randn_like(self.B.mu,requires_grad=False)*self.B.X_mask/np.sqrt(np.sum(hidden_dims)/len(hidden_dims))
+        self.B.invU.invU_0        = self.B.invU.invU_0/torch.tensor(self.role_dim).float()
+        self.B.invU.logdet_invU_0 = self.B.invU.invU_0.logdet()
         # if number_of_objects == 1:
         #     self.obs_model.obs_dist.mu[...,role_dims[1]:role_dims[1]+role_dims[2],:,:] = 0.0
         #     self.A.mu[...,hidden_dims[1]:hidden_dims[1]+hidden_dims[2],hidden_dims[1]:hidden_dims[1]+hidden_dims[2]] = torch.eye(hidden_dims[2])
@@ -106,9 +109,9 @@ class DMBD(LinearDynamicalSystems):
         # y must be unsqueezed so that it has a singleton in the role dimension
         # Elog_like_X_given_pY returns invSigma, invSigmamu, Residual averaged over role assignments, but not over observations
         unsdim = self.obs_model.event_dim + 2
-        invSigma, invSigmamu, Residual = self.obs_model.Elog_like_X_given_pY((Delta(Y.unsqueeze(-unsdim)),R.unsqueeze(-unsdim))) 
+#        invSigma, invSigmamu, Residual = self.obs_model.Elog_like_X_given_pY((Delta(Y.unsqueeze(-unsdim)),R.unsqueeze(-unsdim))) 
+        invSigma, invSigmamu, Residual = self.obs_model.Elog_like_X((Y.unsqueeze(-unsdim),R.unsqueeze(-unsdim))) 
         return  invSigma.sum(-unsdim,True), invSigmamu.sum(-unsdim,True), Residual.sum(-unsdim+2,True)
-
 
     def KLqprior(self):
         KL = self.x0.KLqprior() + self.A.KLqprior()
@@ -136,7 +139,7 @@ class DMBD(LinearDynamicalSystems):
                                                 invSigmamu = self.px.invSigmamu.expand(target_shape + (self.hidden_dim,1)),
                                                 invSigma = self.px.invSigma.expand(target_shape + (self.hidden_dim,self.hidden_dim))).unsqueeze(-unsdim)
 
-        self.obs_model.update_states((px4r,r.unsqueeze(-unsdim),Delta(y.unsqueeze(-unsdim))))  
+        self.obs_model.update_states((px4r,r.unsqueeze(-unsdim),y.unsqueeze(-unsdim)))
 
     def update_obs_parms(self,y,r,lr=1.0):
         self.obs_model.update_markov_parms(lr)
@@ -146,7 +149,7 @@ class DMBD(LinearDynamicalSystems):
                                                 Sigma = self.px.Sigma.expand(target_shape + (self.hidden_dim,self.hidden_dim)),
                                                 invSigmamu = self.px.invSigmamu.expand(target_shape + (self.hidden_dim,1)),
                                                 invSigma = self.px.invSigma.expand(target_shape + (self.hidden_dim,self.hidden_dim)))
-        self.obs_model.update_obs_parms((px4r.unsqueeze(-unsdim),r.unsqueeze(-unsdim),Delta(y.unsqueeze(-unsdim))),lr)
+        self.obs_model.update_obs_parms((px4r.unsqueeze(-unsdim),r.unsqueeze(-unsdim),y.unsqueeze(-unsdim)),lr)
 
     def assignment_pr(self):
         p_role = self.obs_model.assignment_pr()
@@ -191,11 +194,9 @@ class DMBD(LinearDynamicalSystems):
 
     def update(self,y,u,r,iters=1,latent_iters = 1, lr=1.0, verbose=False):
         y,u,r = self.reshape_inputs(y,u,r) 
-        ELBO = torch.tensor(-torch.inf,requires_grad=False)
 
         for i in range(iters):
             self.iters = self.iters + 1
-            ELBO_last = ELBO
             t = time.time()            
             for j in range(latent_iters-1):
                 self.px = None
@@ -215,8 +216,9 @@ class DMBD(LinearDynamicalSystems):
             # print('Number of NaNs in latent_parms x0 = ',self.x0.EXXT().isnan().sum())
 
             if verbose is True:
-                print('Percent Change in ELBO = ',((ELBO-ELBO_last)/ELBO_last.abs()).numpy()*100,  '   Iteration Time = ',(time.time()-t))
+                print('Percent Change in ELBO = ',((ELBO-self.ELBO_last)/self.ELBO_last.abs()).numpy()*100,  '   Iteration Time = ',(time.time()-t))
             self.ELBO_save = torch.cat((self.ELBO_save,ELBO*torch.ones(1)),dim=-1)
+            self.ELBO_last = ELBO
 
     def ELBO(self):
         idx = self.obs_model.p>1e-8
