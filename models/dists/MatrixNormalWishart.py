@@ -217,19 +217,6 @@ class MatrixNormalWishart():
             KL = KL.sum(-1)
         return KL + self.invU.KLqprior()
 
-    def Elog_like(self,X,Y):  # expects X to be batch_shape* + event_shape[:-1] by p 
-                              #     and Y to be batch_shape* + event_shape[:-1] by n
-                              # for mixtures batch_shape* = batch_shape[:-1]+(1,)
-        if self.pad_X:
-            X = torch.cat((X,torch.ones(X.shape[:-2]+(1,1),requires_grad=False)),dim=-2)
-        temp = Y-self.mu@X
-        ELL = - 0.5*(temp.transpose(-2,-1)@self.invU.EinvSigma()@temp) - 0.5*self.n*(X.transpose(-2,-1)@self.V@X)
-        ELL = ELL.view(ELL.shape[:-2]) - 0.5*self.n*np.log(2.0*np.pi)
-        ELL = ELL + 0.5*self.invU.ElogdetinvSigma()
-        for i in range(self.event_dim-2):
-            ELL = ELL.sum(-1)
-        return ELL
-
     def forward(self,pX):
         if self.pad_X:
             invSigma_y_y = self.EinvSigma()
@@ -249,22 +236,34 @@ class MatrixNormalWishart():
         pY = MultivariateNormal_vector_format(Sigma = Sigma_y_y, mu = mu_y, invSigmamu = invSigmamu_y)
         return pY
 
+    def Elog_like(self,X,Y):  # expects X to be batch_shape* + event_shape[:-1] by p 
+                              #     and Y to be batch_shape* + event_shape[:-1] by n
+                              # for mixtures batch_shape* = batch_shape[:-1]+(1,)
+        ELL = -0.5*(Y.transpose(-2,-1)@self.EinvSigma()@Y).squeeze(-1).squeeze(-1)
+        if self.pad_X:
+            ELL = ELL + (Y.transpose(-2,-1)@(self.EinvUX()[...,:,:-1]@X + self.EinvUX()[...,:,-1:])).squeeze(-1).squeeze(-1)
+            ELL = ELL - 0.5*(X.transpose(-2,-1)@self.EXTinvUX()[...,:-1,:-1]@X + 2*self.EXTinvUX()[...,-1:,:-1]@X +  self.EXTinvUX()[...,-1:,-1:]).squeeze(-1).squeeze(-1)
+        else:
+            ELL = ELL + (Y.transpose(-2,-1)@self.EinvUX()@X).squeeze(-1).squeeze(-1)
+            ELL = ELL - 0.5*(X.transpose(-2,-1)@self.EXTinvUX()@X).squeeze(-1).squeeze(-1)
+        ELL = ELL + 0.5*self.ElogdetinvSigma() - 0.5*self.n*np.log(2*np.pi)
+        for i in range(self.event_dim-2):
+            ELL = ELL.sum(-1)
+        return ELL
+
     def Elog_like_given_pX_pY(self,pX,pY):  # This assumes that X is a distribution with the ability to produce 
                                        # expectations of the form EXXT, and EX with dimensions matching Y, i.e. EX.shape[-2:] is (p,1)
 
-        if self.pad_X:         #inefficient recode to avoid using torch.cat
-            EX = pX.mean()
-            EXXT = torch.cat((pX.EXXT(),EX),dim=-1)
-            EX = torch.cat((EX,torch.ones(EX.shape[:-2]+(1,1))),dim=-2)
-            EXXT = torch.cat((EXXT,EX.transpose(-2,-1)),dim=-2)
-        else:
-            EX = pX.mean()
-            EXXT = pX.EXXT()
-
         ELL = -0.5*(pY.EXXT()*self.EinvSigma()).sum(-1).sum(-1)
-        ELL = ELL + (pY.mean().transpose(-2,-1)@self.EinvUX()@EX).squeeze(-1).squeeze(-1)
-        ELL = ELL - 0.5*(EXXT*self.EXTinvUX()).sum(-1).sum(-1)
-        ELL = ELL - 0.5*self.n*np.log(2.0*np.pi) + 0.5*self.invU.ElogdetinvSigma()
+        if self.pad_X:        
+            ELL = ELL + (pY.mean().transpose(-2,-1)@(self.EinvUX()[...,:,:-1]@pX.mean()+self.EinvUX()[...,:,-1:])).squeeze(-1).squeeze(-1)
+            ELL = ELL - 0.5*(pX.EXXT()*self.EXTinvUX()[...,:-1,:-1]).sum(-1).sum(-1)
+            ELL = ELL - (self.EXTinvUX()[...,-1:,:-1]@pX.mean()).squeeze(-1).squeeze(-1)
+            ELL = ELL - 0.5*(self.EXTinvUX()[...,-1,-1])            
+        else:
+            ELL = ELL + (pY.mean().transpose(-2,-1)@self.EinvUX()@pX.mean()).squeeze(-1).squeeze(-1)
+            ELL = ELL - 0.5*(pX.EXXT()*self.EXTinvUX()).sum(-1).sum(-1)
+        ELL = ELL + 0.5*self.invU.ElogdetinvSigma() - 0.5*self.n*np.log(2.0*np.pi)
         return ELL
 
     def Elog_like_X(self,Y):
@@ -286,14 +285,14 @@ class MatrixNormalWishart():
             PJ_x_x = self.EXTinvUX()[...,:-1,:-1]
             PmuJ_y = pY.EinvSigmamu() - self.EinvUX()[...,:,-1:]
             PmuJ_x = -self.EXTinvUX()[...,:-1,-1:]
-            PJ11 = self.EXTinvUX()[...,-1,-1]
+            PJ_1_1 = self.EXTinvUX()[...,-1,-1]
         else:
             PJ_y_y = pY.EinvSigma() + self.EinvSigma()
             PJ_y_x = -self.EinvUX()
             PJ_x_x = self.EXTinvUX()
             PmuJ_y = pY.EinvSigmamu()
-            PmuJ_x = 0.0
-            PJ11 = 0.0
+            PmuJ_x = torch.zeros(self.p,1)
+            PJ_1_1 = torch.tensor(0)
 
         invSigma_y_y, negBinvD, negCinvA, invSigma_x_x = matrix_utils.block_precision_marginalizer(PJ_y_y, PJ_y_x, PJ_y_x.transpose(-2,-1), PJ_x_x)
         invSigmamu_y = PmuJ_y + negBinvD@PmuJ_x
@@ -302,10 +301,11 @@ class MatrixNormalWishart():
         Sigma_x_x = invSigma_x_x.inverse()
         mu_x = Sigma_x_x@invSigmamu_x
 
-        Res = pY.Res() + 0.5*(invSigmamu_y.transpose(-2,-1)@invSigma_y_y.inverse()@invSigmamu_y).squeeze(-1).squeeze(-1) - 0.5*invSigma_y_y.logdet() + 0.5*pY.dim*np.log(2*np.pi) + 0.5*self.ElogdetinvSigma() - 0.5*PJ11
+        Res = pY.Res() + 0.5*(invSigmamu_y.transpose(-2,-1)@invSigma_y_y.inverse()@invSigmamu_y).squeeze(-1).squeeze(-1)
+        Res = Res - 0.5*invSigma_y_y.logdet() + 0.5*pY.dim*np.log(2*np.pi) + 0.5*self.ElogdetinvSigma() - 0.5*PJ_1_1
         return invSigma_x_x, invSigmamu_x, Res + 0.5*(mu_x*invSigmamu_x).sum(-1).sum(-1) - 0.5*invSigma_x_x.logdet() + 0.5*np.log(2*np.pi)*invSigmamu_x.shape[-2]
 
-    def backward(self,pY):  #  Incorrect needs to use matrix inversion instead, i.e. 
+    def backward(self,pY):  
         if self.pad_X:
             PJ_y_y = pY.EinvSigma() + self.EinvSigma()
             PJ_y_x = -self.EinvUX()[...,:,:-1]
@@ -331,10 +331,11 @@ class MatrixNormalWishart():
 
     def predict(self,X):
         if self.pad_X:
-            X = torch.cat((X,torch.ones(X.shape[:-2]+(1,1),requires_grad=False)),dim=-2)
+            invSigmamu_y = (self.EinvUX()[...,:,:-1]@X + self.EinvUX()[..., :,-1:])
+        else:
+            invSigmamu_y = (self.EinvUX()@X)
         invSigma_y_y = self.EinvSigma()
         Sigma_y_y = invSigma_y_y.inverse()
-        invSigmamu_y = (self.EinvUX()@X)
         mu_y = (Sigma_y_y@invSigmamu_y)
 
         return mu_y, Sigma_y_y, invSigma_y_y, invSigmamu_y

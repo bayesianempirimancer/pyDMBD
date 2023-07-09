@@ -57,11 +57,16 @@ class MultivariateNormal_vector_format():
         return MultivariateNormal_vector_format(mu,Sigma,invSigmamu,invSigma).to_event(event_dim)
 
     def combiner(self,other):
-        self.invSigma = self.invSigma+other.invSigma
-        self.invSigmamu = self.invSigmamu+other.invSigmamu
+        self.invSigma = self.EinvSigma()+other.EinvSigma()
+        self.invSigmamu = self.EinvSigmamu()+other.EinvSigmamu()
         self.Sigma = None
         self.mu = None
-        return self
+
+    def nat_combiner(self,invSigma,invSigmamu):
+        self.invSigma = self.EinvSigma()+invSigma
+        self.invSigmamu = self.EinvSigmamu()+invSigmamu
+        self.Sigma = None
+        self.mu = None
 
     def mean(self):
         if self.mu is None:
@@ -162,18 +167,4 @@ class MultivariateNormal_vector_format():
 #         dist = MultivariateNormal_vector_format(mu = torch.randn(mu_0.shape,requires_grad=False)+mu_0,Sigma = Sigma_0)
 #         super().__init__(dist)
 
-# # test mixture
 
-# print('Test mixture of Multivariate Normals in vector format')
-# num_samples = 100
-# dim = 2
-# nc = 4 
-# mu = torch.randn(nc,2)*4
-# X = torch.zeros(num_samples,2)
-
-# for i in range(num_samples):
-#     X[i,:] = torch.randn(1,2)/2. + mu[i%nc]
-
-# model = MixtureofMultivariateNormals_vector_format(torch.zeros(4,2,1),torch.zeros(4,2,2)+torch.eye(2)/4)
-# model.update(X.unsqueeze(-2).unsqueeze(-1),iters=10,lr=0.1,verbose=True)
-# print(model.pi.mean())
