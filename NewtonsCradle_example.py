@@ -28,7 +28,7 @@ data_12 = data_temp[0::5]
 # data_temp = dmodel.generate_data('1 + 3 ball object')[0]
 # data_13 = data_temp[0::5]
 
-datas = (data_0,data_1,data_2,data_11,data_12,data_22)#,data_3,data_4,data_11,data_12,data_13,data_22,data_23)
+datas = (data_1,data_2,data_11,data_12,data_22)#,data_3,data_4,data_11,data_12,data_13,data_22,data_23)
 dy = torch.zeros(2)
 dy[1] = 1.0
 new_datas = ()
@@ -70,13 +70,13 @@ datas = new_datas
 data = torch.cat(datas[0:6],dim=1)
 print('simulations complete')
 
-model = DMBD(obs_shape=data.shape[-2:],role_dims=(4,4,4),hidden_dims=(4,4,4),batch_shape=(),regression_dim = -1, control_dim=0)
+model = DMBD(obs_shape=data.shape[-2:],role_dims=(2,2,2),hidden_dims=(4,4,4),batch_shape=(),regression_dim = -1, control_dim=0)
 # model0 = DMBD(obs_shape=data.shape[-2:],role_dims=(20,0,0),hidden_dims=(10,0,0),batch_shape=(),regression_dim = -1, control_dim=0)
 # model0.update(data,None,None,iters=2*iters,latent_iters=1,lr=0.5,verbose=True)
 # f = r"./cradle0.mp4"
 # ar = animate_results('role',f, xlim = (-1.5,1.5), ylim = (-0.2,1.2), fps=10)
 # ar.make_movie(model0, data, (0,40,60,80))#,120))#,60,61,80,81))
-iters = 40
+iters = 80
 r1 = model.role_dims[0]
 r2 = r1+model.role_dims[1]
 r3 = r2+ model.role_dims[2]
@@ -86,7 +86,7 @@ h3 = h2+ model.hidden_dims[2]
 batch_num = 50
 
 for i in range(iters):
-    model.update(data,None,None,iters=1,latent_iters=1,lr=0.5,verbose=True)
+    model.update(data,None,None,iters=1,latent_iters=1,lr=0.25,verbose=True)
 
 #    batch_num = torch.randint(0,data.shape[1],(1,)).item()
     sbz=model.px.mean()
@@ -177,7 +177,7 @@ print('Generating Movie...')
 # f = r"C://Users/brain/Desktop/cradle.mp4"
 f = r"./cradle.mp4"
 ar = animate_results('sbz',f, xlim = (-1.5,1.5), ylim = (-0.2,1.2), fps=10)
-ar.make_movie(model, data, (0,20,40,60,80,100))#,120))#,60,61,80,81))
+ar.make_movie(model, data, (0,20,40,60,80))#,120))#,60,61,80,81))
 
 batch_num = 40
 plt.scatter(data[:,batch_num,:,0],data[:,batch_num,:,1],cmap='rainbow_r',c=model.obs_model.p.argmax(-1)[:,batch_num,:])
