@@ -118,10 +118,10 @@ class MatrixNormalWishart():
         self.logdetinvV = self.invV.logdet()
 
         if self.X_mask is not None:
-            self.V = self.V * self.X_mask * self.X_mask.transpose(-2,-1)
-            self.invV = self.invV * self.X_mask * self.X_mask.transpose(-2,-1)
+#            self.V = self.V * self.X_mask * self.X_mask.transpose(-2,-1)
+#            self.invV = self.invV * self.X_mask * self.X_mask.transpose(-2,-1)
             self.mu = self.mu*self.X_mask
-            self.logdetinvV = self.logdetinvV - self.logdetinvV_0*(~self.X_mask).sum(-1).sum(-1)
+#            self.logdetinvV = self.logdetinvV - self.logdetinvV_0*(~self.X_mask).sum(-1).sum(-1)
 
     def update(self,pX,pY,p=None,lr=1.0):
         if p is None:
@@ -217,24 +217,25 @@ class MatrixNormalWishart():
             KL = KL.sum(-1)
         return KL + self.invU.KLqprior()
 
-    def forward(self,pX):
+    def forward(self,pX):  # Coule be made more efficient by taking advantage of the fact that EinvSigma() is diagonal
         if self.pad_X:
-            invSigma_y_y = self.EinvSigma()
-            invSigma_y_x = -self.EinvUX()[...,:,:-1]
-            invSigma_x_x = self.EXTinvUX()[...,:-1,:-1] + pX.EinvSigma()
-            Sigma_y_y, invSigma_y_ySigma_y_x = matrix_utils.block_matrix_inverse(invSigma_y_y, invSigma_y_x, invSigma_y_x.transpose(-2,-1), invSigma_x_x, block_form = 'left')[0:2]
-            invSigmamu_y = self.EinvUX()[...,:,-1:] + invSigma_y_ySigma_y_x@pX.EinvSigmamu()
-            mu_y = Sigma_y_y@invSigmamu_y 
-        else:    
-            invSigma_y_y = self.EinvSigma()
-            invSigma_y_x = -self.EinvUX()
-            invSigma_x_x = self.EXTinvUX() + pX.EinvSigma()
-            Sigma_y_y, invSigma_y_ySigma_y_x = matrix_utils.block_matrix_inverse(invSigma_y_y, invSigma_y_x, invSigma_y_x.transpose(-2,-1), invSigma_x_x, block_form = 'left')[0:2]
-            invSigmamu_y = invSigma_y_ySigma_y_x@pX.EinvSigmamu()
-            mu_y = Sigma_y_y@invSigmamu_y 
+            PJ_y_y = self.EinvSigma()
+            PJ_y_x = -self.EinvUX()[...,:,:-1]
+            PJ_x_x = self.EXTinvUX()[...,:-1,:-1] + pX.EinvSigma()
+            PmuJ_y = self.EinvUX()[...,:,-1:]
+            PmuJ_x = pX.EinvSigmamu()-self.EXTinvUX()[...,:-1,-1:]
+#            PJ11 = self.EXTinvUX()[...,-1,-1]
+        else:
+            PJ_y_y = self.EinvSigma()
+            PJ_y_x = -self.EinvUX()
+            PJ_x_x = self.EXTinvUX() + pX.EinvSigma()
+            PmuJ_y = torch.zeros(PJ_y_y.shape[:-1]+(1,))
+            PmuJ_x = pX.EinvSigmamu()
+#            PJ11 = torch.tensor(0.0)
 
-        pY = MultivariateNormal_vector_format(Sigma = Sigma_y_y, mu = mu_y, invSigmamu = invSigmamu_y)
-        return pY
+        invSigma_y_y, negBinvD = matrix_utils.block_precision_marginalizer(PJ_y_y, PJ_y_x, PJ_y_x.transpose(-2,-1), PJ_x_x)[0:2]
+        invSigmamu_y = PmuJ_y + negBinvD@PmuJ_x
+        return MultivariateNormal_vector_format(invSigma = invSigma_y_y, invSigmamu = invSigmamu_y)
 
     def Elog_like(self,X,Y):  # expects X to be batch_shape* + event_shape[:-1] by p 
                               #     and Y to be batch_shape* + event_shape[:-1] by n
@@ -310,7 +311,7 @@ class MatrixNormalWishart():
             PJ_y_y = pY.EinvSigma() + self.EinvSigma()
             PJ_y_x = -self.EinvUX()[...,:,:-1]
             PJ_x_x = self.EXTinvUX()[...,:-1,:-1]
-            PmuJ_y = pY.EinvSigmamu() - self.EinvUX()[...,:,-1:]
+            PmuJ_y = pY.EinvSigmamu() + self.EinvUX()[...,:,-1:]
             PmuJ_x = -self.EXTinvUX()[...,:-1,-1:]
             PJ11 = self.EXTinvUX()[...,-1,-1]
         else:
@@ -345,6 +346,12 @@ class MatrixNormalWishart():
 
     def mean(self):
         return self.mu
+
+    def weights(self): 
+        if self.pad_X is True:
+            return self.mu[...,:-1]
+        else:
+            return self.mu
 
     def var(self):
         return self.ESigma().diagonal(dim1=-1,dim2=-2).unsqueeze(-1)*self.V.diagonal(dim1=-1,dim2=-2).unsqueeze(-2)

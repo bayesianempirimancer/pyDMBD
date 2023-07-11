@@ -33,6 +33,8 @@ class MatrixNormalGamma():
             self.batch_shape = torch.Size(())
         if U_0 is None:
             U_0 = torch.zeros(self.batch_shape + (self.n,),requires_grad=False) + torch.ones(self.n,requires_grad=False)
+        elif U_0.shape[-2] == U_0.shape[-1]:
+            U_0 = U_0.diagonal(dim1=-2,dim2=-1)
         if V_0 is None:
             V_0 = torch.zeros(self.batch_shape + (self.p,self.p),requires_grad=False) + torch.eye(self.p,requires_grad=False)
         elif pad_X:
@@ -119,10 +121,10 @@ class MatrixNormalGamma():
         self.logdetinvV = self.invV.logdet()
 
         if self.X_mask is not None:
-            self.V = self.V * self.X_mask * self.X_mask.transpose(-2,-1)
-            self.invV = self.invV * self.X_mask * self.X_mask.transpose(-2,-1)
+#            self.V = self.V * self.X_mask * self.X_mask.transpose(-2,-1)
+#            self.invV = self.invV * self.X_mask * self.X_mask.transpose(-2,-1)
             self.mu = self.mu*self.X_mask
-            self.logdetinvV = self.logdetinvV - self.logdetinvV_0*(~self.X_mask).sum(-1).sum(-1)
+#            self.logdetinvV = self.logdetinvV - self.logdetinvV_0*(~self.X_mask).sum(-1).sum(-1)
 
         if self.uniform_precision==True:
             self.invU.gamma.alpha = self.invU.gamma.alpha.sum(-1,keepdim=True)  # THIS IS A HACK
@@ -227,22 +229,23 @@ class MatrixNormalGamma():
 
     def forward(self,pX):
         if self.pad_X:
-            invSigma_y_y = self.EinvSigma()
-            invSigma_y_x = -self.EinvUX()[...,:,:-1]
-            invSigma_x_x = self.EXTinvUX()[...,:-1,:-1] + pX.EinvSigma()
-            Sigma_y_y, invSigma_y_ySigma_y_x = matrix_utils.block_matrix_inverse(invSigma_y_y, invSigma_y_x, invSigma_y_x.transpose(-2,-1), invSigma_x_x, block_form = 'left')[0:2]
-            invSigmamu_y = self.EinvUX()[...,:,-1:] + invSigma_y_ySigma_y_x@pX.EinvSigmamu()
-            mu_y = Sigma_y_y@invSigmamu_y 
-        else:    
-            invSigma_y_y = self.EinvSigma()
-            invSigma_y_x = -self.EinvUX()
-            invSigma_x_x = self.EXTinvUX() + pX.EinvSigma()
-            Sigma_y_y, invSigma_y_ySigma_y_x = matrix_utils.block_matrix_inverse(invSigma_y_y, invSigma_y_x, invSigma_y_x.transpose(-2,-1), invSigma_x_x, block_form = 'left')[0:2]
-            invSigmamu_y = invSigma_y_ySigma_y_x@pX.EinvSigmamu()
-            mu_y = Sigma_y_y@invSigmamu_y 
+            PJ_y_y = self.EinvSigma()
+            PJ_y_x = -self.EinvUX()[...,:,:-1]
+            PJ_x_x = self.EXTinvUX()[...,:-1,:-1] + pX.EinvSigma()
+            PmuJ_y = self.EinvUX()[...,:,-1:]
+            PmuJ_x = pX.EinvSigmamu()-self.EXTinvUX()[...,:-1,-1:]
+#            PJ11 = self.EXTinvUX()[...,-1,-1]
+        else:
+            PJ_y_y = self.EinvSigma()
+            PJ_y_x = -self.EinvUX()
+            PJ_x_x = self.EXTinvUX() + pX.EinvSigma()
+            PmuJ_y = torch.zeros(PJ_y_y.shape[:-1]+(1,))
+            PmuJ_x = pX.EinvSigmamu()
+#            PJ11 = torch.tensor(0.0)
 
-        pY = MultivariateNormal_vector_format(Sigma = Sigma_y_y, mu = mu_y, invSigmamu = invSigmamu_y)
-        return pY
+        invSigma_y_y, negBinvD = matrix_utils.block_precision_marginalizer(PJ_y_y, PJ_y_x, PJ_y_x.transpose(-2,-1), PJ_x_x)[0:2]
+        invSigmamu_y = PmuJ_y + negBinvD@PmuJ_x
+        return MultivariateNormal_vector_format(invSigma = invSigma_y_y, invSigmamu = invSigmamu_y)
 
     def Elog_like(self,X,Y):  # expects X to be batch_shape* + event_shape[:-1] by p 
                               #     and Y to be batch_shape* + event_shape[:-1] by n
@@ -318,7 +321,7 @@ class MatrixNormalGamma():
             PJ_y_y = pY.EinvSigma() + self.EinvSigma()
             PJ_y_x = -self.EinvUX()[...,:,:-1]
             PJ_x_x = self.EXTinvUX()[...,:-1,:-1]
-            PmuJ_y = pY.EinvSigmamu() - self.EinvUX()[...,:,-1:]
+            PmuJ_y = pY.EinvSigmamu() + self.EinvUX()[...,:,-1:]
             PmuJ_x = -self.EXTinvUX()[...,:-1,-1:]
             PJ11 = self.EXTinvUX()[...,-1,-1]
         else:
@@ -353,6 +356,12 @@ class MatrixNormalGamma():
 
     def mean(self):
         return self.mu
+
+    def weights(self): 
+        if self.pad_X is True:
+            return self.mu[...,:-1]
+        else:
+            return self.mu
 
     def var(self):
         return self.ESigma().diagonal(dim1=-1,dim2=-2).unsqueeze(-1)*self.V.diagonal(dim1=-1,dim2=-2).unsqueeze(-2)
