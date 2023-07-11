@@ -10,50 +10,67 @@ print('TEST VANILLA Matrix Normal Wishart with X_mask, and mask')
 from models.dists import MatrixNormalWishart
 n=2
 p=10
-n_samples = 200
+n_samples = 400
 batch_num = 4
 w_true = torch.randn(n,p)/np.sqrt(p)
 X_mask = w_true.abs().sum(-2)<w_true.abs().sum(-2).mean()
 X_mask = X_mask.unsqueeze(-2)
 w_true = w_true*X_mask
-b_true = torch.randn(n,1)*0
-W0 = MatrixNormalWishart(torch.zeros(n,p),torch.eye(n),torch.eye(p))
-W1 = MatrixNormalWishart(torch.zeros(n,p),torch.eye(n),torch.eye(p),X_mask=X_mask)
-W2 = MatrixNormalWishart(torch.zeros(n,p),torch.eye(n),torch.eye(p),mask=X_mask.expand(n,p))
+
+b_true = torch.randn(n,1)
+pad_X = True
+
+W0 = MatrixNormalWishart(torch.zeros(n,p),torch.eye(n),torch.eye(p),pad_X=pad_X)
+W1 = MatrixNormalWishart(torch.zeros(n,p),torch.eye(n),torch.eye(p),X_mask=X_mask,pad_X=pad_X)
+W2 = MatrixNormalWishart(torch.zeros(n,p),torch.eye(n),torch.eye(p),mask=X_mask.expand(n,p),pad_X=pad_X)
 X=torch.randn(n_samples,p)
 Y=torch.zeros(n_samples,n)
 for i in range(n_samples):
-    Y[i,:] = X[i:i+1,:]@w_true.transpose(-1,-2) + b_true.transpose(-2,-1) + torch.randn(1)/4.0
+    Y[i,:] = X[i:i+1,:]@w_true.transpose(-1,-2) + b_true.transpose(-2,-1)*pad_X + torch.randn(1)/100.0
 from matplotlib import pyplot as plt
 W0.raw_update(X.unsqueeze(-1),Y.unsqueeze(-1))
 W1.raw_update(X.unsqueeze(-1),Y.unsqueeze(-1))
 W2.raw_update(X.unsqueeze(-1),Y.unsqueeze(-1))
-Yhat = (W1.mu@X.unsqueeze(-1)).squeeze(-1)
+
+Yhat = W0.predict(X.unsqueeze(-1))[0].squeeze(-1)
 plt.scatter(Y,Yhat)
+plt.title('W0 Predition')
 plt.show()
-plt.scatter(w_true,W1.mean())
+plt.scatter(w_true,W1.weights())
+plt.title('Weights')
 plt.show()
 
-Yhat = (W2.mu@X.unsqueeze(-1)).squeeze(-1)
+Yhat = W1.predict(X.unsqueeze(-1))[0].squeeze(-1)
 plt.scatter(Y,Yhat)
+plt.title('W1 Predition')
 plt.show()
-plt.scatter(w_true,W2.mean())
+plt.scatter(w_true,W1.weights())
+plt.title('Weights')
 plt.show()
 
+Yhat = W2.predict(X.unsqueeze(-1))[0].squeeze(-1)
+plt.scatter(Y,Yhat)
+plt.show()
+plt.title('W2 Prediction')
+plt.scatter(w_true,W2.weights())
+plt.title('Weights')
+plt.show()
 
 invSigma_xx, invSigmamu_x, Res = W0.Elog_like_X(Y.unsqueeze(-1))
 mu_x0 = torch.linalg.solve(invSigma_xx+1e-6*torch.eye(p),invSigmamu_x)
 plt.scatter(X,mu_x0.squeeze(),alpha=0.2)
+plt.title('W0 backward Prediction')
 plt.show()
 invSigma_xx, invSigmamu_x, Res = W1.Elog_like_X(Y.unsqueeze(-1))
 mu_x1 = invSigma_xx.pinverse()@invSigmamu_x
 plt.scatter(mu_x0.squeeze(),mu_x1.squeeze(),alpha=0.2)
+plt.title('W1 backward Prediction')
 plt.show()
 invSigma_xx, invSigmamu_x, Res = W2.Elog_like_X(Y.unsqueeze(-1))
 mu_x2 = invSigma_xx.pinverse()@invSigmamu_x
 plt.scatter(mu_x0.squeeze(),mu_x2.squeeze(),alpha=0.2)
+plt.title('W2 backward Prediction')
 plt.show()
-
 
 
 
@@ -151,7 +168,7 @@ for t in range(1,T):
 x=x.unsqueeze(-1).unsqueeze(-3)
 pX = MultivariateNormal_vector_format(mu=x, Sigma = torch.zeros(x.shape[:-1] + (xdim,))+torch.eye(xdim)/10)
 model = ARHMM_prXRY(5,dim,xdim,rdim,batch_shape=())
-pXRY = (pX,r.unsqueeze(-1).unsqueeze(-3),Delta(y.unsqueeze(-1).unsqueeze(-3)))
+pXRY = (pX,r.unsqueeze(-1).unsqueeze(-3),y.unsqueeze(-1).unsqueeze(-3))
 model.update(pXRY,iters=20,lr=1,verbose=True)
 print('ARHMM TEST COMPLETE')
 
@@ -227,12 +244,13 @@ print(B1@B2[idx].transpose(-2,-1))
 
 
 
-print('No Test for dMixture')
 print('Test dMixtureofLinearTransforms')
 n=4
 p=4
 nc=2
 num_samps=1000
+import torch
+import numpy as np
 from torch.distributions import OneHotCategorical
 from models import dMixtureofLinearTransforms
 from models.dists import Delta
@@ -296,7 +314,7 @@ plt.show()
 plt.scatter(Y,mu.squeeze(-1))
 plt.scatter(Y,mu2.squeeze(-1))
 plt.plot([Y.min(),Y.max()],[Y.min(),Y.max()])
-plt.title('Observations')
+plt.title('Predictions')
 plt.xlabel('True')
 plt.ylabel('Estimated')
 plt.show()
@@ -308,6 +326,7 @@ plt.title('Regressors: X from Backward routine')
 plt.xlabel('True')
 plt.ylabel('Estimated')
 plt.show()
+
 
 
 
@@ -433,7 +452,7 @@ invSigma_0 = torch.zeros(batch_size,hidden_dim,dim,dim)+torch.eye(dim)
 obs_dist = NormalInverseWishart(lambda_mu_0, mu_0, nu_0, invSigma_0)
 
 model = HMM(obs_dist)  
-model.update(y.unsqueeze(-2).unsqueeze(-2),10,verbose=True)
+model.update(y.unsqueeze(-2),10,verbose=True)
 
 ELBO = model.ELBO()
 loc = ELBO.argmax()
@@ -475,7 +494,7 @@ invSigma_0 = torch.zeros(hidden_dim,batch_size,dim,dim)+torch.eye(dim)
 obs_dist = NormalInverseWishart(lambda_mu_0, mu_0, nu_0, invSigma_0).to_event(1)
 
 model = HMM(obs_dist)  
-model.update(y.unsqueeze(-3),10,verbose=True)
+model.update(y,10,verbose=True)
 
 
 y = y.reshape(T,num_samples,6)
