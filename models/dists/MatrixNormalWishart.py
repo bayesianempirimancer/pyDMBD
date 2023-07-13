@@ -333,13 +333,17 @@ class MatrixNormalWishart():
     def predict(self,X):
         if self.pad_X:
             invSigmamu_y = (self.EinvUX()[...,:,:-1]@X + self.EinvUX()[..., :,-1:])
+            Res = -0.5*X.transpose(-1,-2)@self.EXTinvUX()[...,:-1,:-1]@X - self.EXTinvUX()[...,-1:,:-1]@X - 0.5*self.EXTinvUX()[...,-1:,-1:]
         else:
             invSigmamu_y = (self.EinvUX()@X)
+            Res = -0.5*X.transpose(-1,-2)@self.EXTinvUX()@X
+        Res = Res.squeeze(-1).squeeze(-1) + 0.5*self.ElogdetinvSigma() - 0.5*self.n*np.log(2*np.pi)
+
         invSigma_y_y = self.EinvSigma()
         Sigma_y_y = invSigma_y_y.inverse()
         mu_y = (Sigma_y_y@invSigmamu_y)
 
-        return mu_y, Sigma_y_y, invSigma_y_y, invSigmamu_y
+        return mu_y, Sigma_y_y, invSigma_y_y, invSigmamu_y, Res
 
     def predict_given_pX(self,pX):
         return self.forward(pX)

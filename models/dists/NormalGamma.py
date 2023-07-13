@@ -115,7 +115,6 @@ class NormalGamma():
         return out + self.gamma.KLqprior().sum(-1)
 
 # from .Mixture import Mixture
-
 # class MixtureofNormalGammas(Mixture):
 #     def __init__(self,dim,n):
 #         dist = NormalGamma(torch.ones(dim,requires_grad=False),
@@ -124,7 +123,3 @@ class NormalGamma():
 #                            torch.ones(dim,n,requires_grad=False),
 #                            )
 #         super().__init__(dist)
-# # test mixture
-# X = torch.randn(100,2)
-# model = MixtureofNormalGammas(4,2)
-# model.update(X.unsqueeze(-2),iters=10,verbose=True)

@@ -9,6 +9,7 @@ from .Wishart import Wishart_UnitTrace
 from .Wishart import Wishart_UnitDet
 from .MultivariateNormal import MultivariateNormal
 from .MultivariateNormal_vector_format import MultivariateNormal_vector_format
+from .MVN_ard import MVN_ard
 from .NormalGamma import NormalGamma
 from .NormalInverseWishart import NormalInverseWishart
 from .DiagonalWishart import DiagonalWishart

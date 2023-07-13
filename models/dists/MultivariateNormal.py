@@ -120,16 +120,3 @@ class MultivariateNormal():
 #         dist = MultivariateNormal(mu = torch.randn(mu_0.shape)+mu_0,Sigma = Sigma_0)
 #         super().__init__(dist)
 
-# # test mixture
-# num_samples = 100
-# dim = 2
-# nc = 4 
-# mu = torch.randn(nc,2)*4
-# X = torch.zeros(num_samples,2)
-
-# for i in range(num_samples):
-#     X[i,:] = torch.randn(1,2)/2. + mu[i%nc]
-
-# model = MixtureofMultivariateNormals(torch.zeros(4,2),torch.zeros(4,2,2)+torch.eye(2)/4)
-# model.update(X,iters=10,lr=0.1,verbose=True)
-# print(model.pi.mean())
