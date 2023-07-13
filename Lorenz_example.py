@@ -19,7 +19,7 @@ data = sim.simulate(100)
 
 data = torch.cat((data[...,0,:],data[...,1,:],data[...,2,:]),dim=-1).unsqueeze(-2)
 data = data - data.mean((0,1,2),True)
-
+data = data/data.std()
 
 model = DMBD(obs_shape=data.shape[-2:],role_dims=(4,4,4),hidden_dims=(3,3,3),batch_shape=(),regression_dim = 0, control_dim=0,number_of_objects=1)
 model.obs_model.ptemp = 6.0
@@ -28,7 +28,7 @@ iters = 10
 loc1 = torch.tensor((-0.5,-0.6,1.6))
 loc2 = torch.tensor((0.5,0.6,1.6))
 for i in range(iters):
-    model.update(data,None,None,iters=2,latent_iters=1,lr=0.5)
+    model.update(data,None,None,iters=2,latent_iters=1,lr=0.5,verbose=True)
 
 
     sbz=model.px.mean().squeeze()

@@ -233,7 +233,7 @@ model.raw_update(X,Y,iters=20,lr=0.5,verbose=True)
 from matplotlib import pyplot as plt
 plt.plot(-z[:,0])
 plt.plot(model.p[:,0])
-
+plt.show()
 B1 = B/(B*B).sum(-1,keepdim=True).sqrt()
 B2 = model.obs_dist.mean()
 B2 = B2/(B2*B2).sum(-1,keepdim=True).sqrt()
@@ -247,41 +247,45 @@ print(B1@B2[idx].transpose(-2,-1))
 print('Test dMixtureofLinearTransforms')
 n=4
 p=4
-nc=2
+nc=4
 num_samps=1000
 import torch
 import numpy as np
 from torch.distributions import OneHotCategorical
 from models import dMixtureofLinearTransforms
-from models.dists import Delta
+from models.dists import Delta, MultivariateNormal_vector_format
 from matplotlib import pyplot as plt
 
-A = torch.randn(nc,n,p)/np.sqrt(p)
+A = 4*torch.randn(nc,n,p)/np.sqrt(p)
+B = 4*torch.randn(nc,n)/np.sqrt(p)
 X = torch.randn(num_samps,p)
+BX = torch.randn(nc,p)
 
-W = torch.randn(nc,p)/np.sqrt(p)*4
-pr = X@W.transpose(-2,-1)
-pr = (pr-pr.max(-1,True)[0]).exp()
+W = 4*torch.randn(nc,p)/np.sqrt(p)
+logits = X@W.transpose(-2,-1) + torch.randn(nc)
+pr = (logits-logits.max(-1,True)[0]).exp()
 pr = pr/pr.sum(-1,True)
-label = OneHotCategorical(pr).sample().argmax(-1)
+label = OneHotCategorical(logits = logits).sample().argmax(-1)
 
-Y = A[label]@X.unsqueeze(-1)
-Y = Y + torch.randn_like(Y)/20.0
-Y  = Y.squeeze(-1)
+X = X + BX[label]
+Y = ((A[label]@X.unsqueeze(-1)).squeeze(-1)+B[label])
+# Y = Y + torch.randn_like(Y)/100/
 
-
-model = dMixtureofLinearTransforms(n,p,nc,batch_shape=(),pad_X=False)
+model = dMixtureofLinearTransforms(n,p,nc+1,batch_shape=(),pad_X=False)
 for i in range(model.batch_dim):
     X = X.unsqueeze(-2)
     Y = Y.unsqueeze(-2)
 
-model.raw_update(X,Y,iters=10,lr=1,verbose=True)
-model.update(Delta(X.unsqueeze(-1)),Delta(Y.unsqueeze(-1)),iters=10,lr=1,verbose=True)
+model.raw_update(X,Y,iters=50,lr=0.5,verbose=True)
 
-mu, Sigma, invSigmamu, invSigma, p = model.forward(X)
-px,logz,pb = model.backward(Y)
+pX = MultivariateNormal_vector_format(invSigmamu=100*X.unsqueeze(-1), invSigma = torch.eye(n)*100)
+pY = MultivariateNormal_vector_format(invSigmamu=100*Y.unsqueeze(-1), invSigma = torch.eye(n)*100)
+#model.update(pX,pY,iters=20,lr=1,verbose=True)
 
-ELL = model.ELBO().squeeze()
+mu, Sigma, p = model.predict(X)
+px,logz,pb = model.postdict(Y)
+
+ELL = model.ELBO_last
 if ELL.ndim>0:
     m,idx = ELL.max(0)
     mu = mu[:,idx]
@@ -295,39 +299,57 @@ else:
     Abar = model.A.mean()
     muX = px.mean()
 
-mu2 = invSigma.inverse()@invSigmamu
-idx = (pr.unsqueeze(-1)*p.unsqueeze(-2)).mean(0).argmax(-2)
-plt.scatter(pr[:,idx].log(),p.log())
+idx = (p.unsqueeze(-1)*pr.unsqueeze(-2)).mean(0).argmax(-2)
+plt.scatter(pr.log(),p[:,idx].log())
 plt.plot([p.log().min(),p.log().max()],[p.log().min(),p.log().max()])
 plt.title('log Assignment Probabilities')
 plt.xlabel('True')
 plt.ylabel('Estimated')
 plt.show()
 
-plt.scatter(A[idx],Abar)
+plt.scatter(A,Abar[idx])
 plt.plot([A.min(),A.max()],[A.min(),A.max()])
 plt.title('Regression Weights')
 plt.xlabel('True')
 plt.ylabel('Estimated')
 plt.show()
 
-plt.scatter(Y,mu.squeeze(-1))
-plt.scatter(Y,mu2.squeeze(-1))
-plt.plot([Y.min(),Y.max()],[Y.min(),Y.max()])
-plt.title('Predictions')
-plt.xlabel('True')
-plt.ylabel('Estimated')
-plt.show()
-
-
-plt.scatter(X,muX.squeeze())
+plt.scatter(X,muX.squeeze(-1))
 plt.plot([X.min(),X.max()],[X.min(),X.max()])
 plt.title('Regressors: X from Backward routine')
 plt.xlabel('True')
 plt.ylabel('Estimated')
 plt.show()
 
+plt.scatter(Y,mu.squeeze(-1),c=p.argmax(-1,True).expand(-1,n))
+plt.plot([Y.min(),Y.max()],[Y.min(),Y.max()])
+plt.title('Predictions')
+plt.xlabel('True')
+plt.ylabel('Estimated')
+plt.show()
 
+mu = mu.squeeze(-1)
+plt.scatter(Y[:,0],Y[:,1],c=logits.argmax(-1))
+plt.title('True Labels')
+plt.show()
+
+plt.scatter(mu[:,0],mu[:,1],c=p.argmax(-1))
+plt.title('Predited Labels')
+plt.show()
+
+# print('Test dMixtureofLinearTransforms with probabilistic inputs')
+
+# pY = MultivariateNormal_vector_format(invSigmamu = 100*Y.unsqueeze(-1),invSigma = 100*torch.eye(n))
+# pX = model.backward(pY)
+# plt.scatter(X,pX.mean().squeeze(-1))
+# plt.show()
+
+MSE = ((Y-mu)**2).mean()
+PVE = 1 - MSE/Y.var()
+print('Percent Variance Explained :  ',PVE*100)
+
+hit = (model.pi.predict(X)[:,idx].argmax(-1)==label).float().mean()
+print('hit probability = ',hit)
 
 
 print('TEST Gaussian Mixture Model')
@@ -727,49 +749,52 @@ print('LDS MIXTURE TEST COMPLETE')
 
 
 
-print('TEST MIXTURE of Linear Transforms')
+print('TEST dMIXTURE of Linear Transforms')
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from models.MixtureofLinearTransforms import *
-nc=3
-dim =3
-p=5
-n = 2*dim
-n_samples = 200
-w_true = torch.randn(nc,n,p)
-b_true = torch.randn(nc,n,1)
+from models.dMixtureofLinearTransforms import *
+from models.dists.MultivariateNormal_vector_format import *
+from torch.distributions import OneHotCategorical 
+
+dim = 2
+p=10
+n = 2
+n_samples = 1000
+w_true = torch.randn(dim,n,p)/np.sqrt(p)
+b_true = torch.randn(dim,n)
+beta_true = 4*torch.randn(dim,p)/np.sqrt(p)
 X=torch.randn(n_samples,p)
-Y=torch.zeros(n_samples,n)
-for i in range(n_samples):
-    Y[i,:] = X[i:i+1,:]@w_true[i%nc,:,:].transpose(-1,-2) + b_true[i%nc,:,:].transpose(-2,-1) + torch.randn(1)/4.0
-nc=5
-mu_0 = torch.zeros(n,p)
-model = MixtureofLinearTransforms(n,p,dim,pad_X=False)
-model.update((X,Y),iters=20,verbose=True)
-xidx = (w_true[0,0,:]**2).argmax()
-plt.scatter(X[:,xidx].data,Y[:,0].data,c=model.assignment())
+logits = X@beta_true.transpose(-2,-1)
+Z = OneHotCategorical(logits = logits).sample()
+Y = (w_true[Z.argmax(-1)]@X.unsqueeze(-1)).squeeze(-1) + b_true[Z.argmax(-1)]
+
+Y = Y + torch.randn_like(Y)/100.0
+pY = MultivariateNormal_vector_format(invSigmamu = 100*Y.unsqueeze(-1), invSigma = 100*torch.eye(n))
+pX = MultivariateNormal_vector_format(invSigmamu = 100*X.unsqueeze(-1), invSigma = 100*torch.eye(p))
+
+# model = dMixtureofLinearTransforms(n,p,dim+2,pad_X=True,type = 'Wishart')
+# model.raw_update(X.unsqueeze(-1),Y.unsqueeze(-1),iters=20,lr=1,verbose=True)
+model = dMixtureofLinearTransforms(n,p,dim,pad_X=True,type = 'Wishart')
+model2 = dMixtureofLinearTransforms(n,p,dim+2,pad_X=True,type='Wishart')
+
+model.raw_update(X,Y,iters=20,lr=1,verbose=True)
+model2.update(pX,pY,iters=20,lr=1,verbose=True)
+
+Yhat = model.predict(X)[0].squeeze(-1)
+p = model.pi.predict(X)
+assignments = p.argmax(-1)
+plt.scatter(Y[:,0],Y[:,1],c=assignments)
+plt.show()
+plt.scatter(Y,Yhat,c=assignments.unsqueeze(-1).expand(-1,n))
 plt.show()
 
-print('TEST MIXTURE of Linear Transforms (independent)')
-nc=3
-dim =3
-p=5
-n = 2*dim
-n_samples = 200
-w_true = torch.randn(nc,n,p)
-b_true = torch.randn(nc,n,1)
-X=torch.randn(n_samples,p)
-Y=torch.zeros(n_samples,n)
-for i in range(n_samples):
-    Y[i,:] = X[i:i+1,:]@w_true[i%nc,:,:].transpose(-1,-2) + b_true[i%nc,:,:].transpose(-2,-1) + torch.randn(1)/4.0
-nc=5
-mu_0 = torch.zeros(n,p)
-model = MixtureofLinearTransforms(n,p,dim,pad_X=False,independent=True)
-model.update((X,Y),iters=20,verbose=True)
-xidx = (w_true[0,0,:]**2).argmax()
-plt.scatter(X[:,xidx].data,Y[:,0].data,c=model.assignment())
+print('Percent Variance Explained = ',100-((Y-Yhat)**2).mean()/Y.var()*100)
+
+pYhat = model2.forward(pX)
+plt.scatter(Y,Yhat,c=model2.pi.forward(pX).argmax(-1,True).expand(-1,n))
 plt.show()
+
 
 
 print('Test Multinomial Logistic Regression with ARD')
@@ -781,22 +806,29 @@ from models.MultiNomialLogisticRegression import *
 
 n=4
 p=10
-num_samples = 600
-W = 6*torch.randn(n,p)/np.sqrt(p)
+num_samples = 1000
+W = 2*torch.randn(n,p)/np.sqrt(p)
 X = torch.randn(num_samples,p)
-B = torch.randn(n).sort()[0]/2
+X = X-X.mean(0,True)
+B = torch.randn(n)
 
 
-logpY = X@W.transpose(-2,-1)#+B
+logpY = X@W.transpose(-2,-1)+B
 pY = (logpY - logpY.logsumexp(-1,True)).exp()
 
 Y = torch.distributions.OneHotCategorical(logits = logpY).sample()
 
 model = MultiNomialLogisticRegression(n,p,pad_X=True)
 
-model.raw_update(X,Y,iters =20,verbose=True)
+model.raw_update(X,Y,iters =100,verbose=True)
 #model.update(Delta(X.unsqueeze(-1)),Y,iters =4)
-What = model.beta.mean().squeeze()
+W_hat = model.beta.mean().squeeze(-1)
+W_true = (W[:-1] - W[-1:])
+W_hat = 2*W_hat - W_hat.cumsum(0)
+W_hat = W_hat[:,:-1]
+plt.scatter(W_true,W_hat)
+plt.plot([W_true.min(),W_true.max()],[W_true.min(),W_true.max()])
+plt.show()
 
 print('Predictions by lowerbounding with q(w|b,<psi^2>)')
 psb = model.predict(X)
@@ -820,8 +852,11 @@ psb2 = model.predict(X)
 #     plt.scatter(pY[:,i],psb2[:,i])    
 # plt.plot([0,1],[0,1])
 # plt.show()
+print('Percent Correct (best possible)', ((Y.argmax(-1)==pY.argmax(-1)).sum()/Y.shape[0]).data*100)
 print('Percent Correct   = ',((Y.argmax(-1)==psb.argmax(-1)).sum()/Y.shape[0]).data*100)
 print('Percent Correct_2 = ',((Y.argmax(-1)==psb2.argmax(-1)).sum()/Y.shape[0]).data*100)
+
+
 
 
 print('TEST NL REGRESSION')
@@ -838,7 +873,7 @@ from models.MixtureofLinearTransforms import *
 n=1
 p=10
 hidden_dim = 2
-nc =  20
+nc =  8
 num_samps=800
 batch_shape = ()
 t=time.time()
@@ -856,7 +891,8 @@ model0 = NLRegression_low_rank(n,p,hidden_dim,nc,batch_shape=batch_shape)
 model1 = NLRegression_full_rank(n,p,nc,batch_shape=batch_shape)
 model2 = dMixtureofLinearTransforms(n,p,nc,batch_shape=batch_shape,pad_X=True)
 model3 = NLRegression_Multinomial(n,p,nc,batch_shape=batch_shape)
-models = (model0,model1,model2,model3)
+#model4 = MixtureofLinearTransforms(n,p,nc,batch_shape=batch_shape,pad_X=True)
+models = (model0,model1,model2,model3)#,model4)
 predictions = []
 inference_cost=[]
 prediction_cost=[]
@@ -865,13 +901,16 @@ for k, model in enumerate(models):
     print('Training Model ',k)
     t= time.time()
     if(k==4):
-        model.raw_update((X,Y),iters = 40,lr=1)
+        model.raw_update(X.unsqueeze(-1),Y.unsqueeze(-1),iters = 40,lr=1,verbose=True)
+        inference_cost.append(time.time()-t)
+        predictions.append(model.predict(X.unsqueeze(-1))[0].squeeze(-1))
+        prediction_cost.append(time.time()-t)
     else:
         model.raw_update(X,Y,iters = 40,lr=1)
-    inference_cost.append(time.time()-t)
-    t= time.time()
-    predictions.append(model.forward(X)[0])
-    prediction_cost.append(time.time()-t)
+        inference_cost.append(time.time()-t)
+        t= time.time()
+        predictions.append(model.predict(X)[0])
+        prediction_cost.append(time.time()-t)
 
 
 print('inference_cost = ',inference_cost)

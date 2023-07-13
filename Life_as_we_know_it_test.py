@@ -5,65 +5,47 @@ from matplotlib.animation import FuncAnimation, FFMpegWriter
 from matplotlib import cm 
 start_time=time.time()
 
-print('Test on Artificial Life Data')
-print('Loading data....')
-y=np.genfromtxt('./data/rotor_story_y.txt')
-x=np.genfromtxt('./data/rotor_story_x.txt')
-print('....Done.')
-y=torch.tensor(y,requires_grad=False).float()
-x=torch.tensor(x,requires_grad=False).float()
+
+print('Test on life as we know it data set')
+print('Loading Data...')
+y=np.genfromtxt('./data/ly.txt')
+x=np.genfromtxt('./data/lx.txt')
+print('Done.')
+y=torch.tensor(y,requires_grad=False).float().transpose(-2,-1)
+x=torch.tensor(x,requires_grad=False).float().transpose(-2,-1)
 y=y.unsqueeze(-1)
 x=x.unsqueeze(-1)
-
-T = 100
-data = torch.cat((y,x),dim=-1)
-data = data[::9]
+data = torch.cat((x,y),dim=-1)
+data = data/data.std()
+data = data[847:].clone().detach()
 v_data = torch.diff(data,dim=0)
 v_data = v_data/v_data.std()
 data = data[1:]
-data = data/data.std()
-
 data = torch.cat((data,v_data),dim=-1)
-del v_data
 del x
 del y
-T = data.shape[0]
-T = T//2
-data = data[:T]
-data = data.unsqueeze(1).clone().detach()
 
-# print('Initializing V model....')
-# v_model = DMBD(obs_shape=v_data.shape[-2:],role_dims=(16,16,16),hidden_dims=(5,5,5))
-# print('Updating model V....')
-# v_model.update(v_data,None,None,iters=100,latent_iters=1,lr=0.25)
-# v_model.update(v_data,None,None,iters=10,latent_iters=1,lr=1)
-# print('Making Movie')
-# f = r"c://Users/brain/Desktop/rotator_movie_v.mp4"
-# ar = animate_results('sbz',f)
-# ar.make_movie(v_model, data, list(range(10)))
-# len_v_data = v_data
-# len_v_model = v_model
+#data = data.reshape(12,100,128,2).transpose(0,1)
+#v_data = v_data.reshape(12,100,128,2).transpose(0,1)
+data = data.reshape(6,200,128,4).transpose(0,1)
 
 print('Initializing X + V model....')
-model = DMBD(obs_shape=data.shape[-2:],role_dims=(0,1,0),hidden_dims=(12,4,0),regression_dim = 0, control_dim = 0, number_of_objects=11)
-
+model = DMBD(obs_shape=data.shape[-2:],role_dims=(0,1,1),hidden_dims=(12,4,4),regression_dim = 0, control_dim=0,number_of_objects=6)
 print('Updating model X+V....')
 model.update(data,None,None,iters=40,latent_iters=1,lr=0.5,verbose=True)
-#model.px = None
-#model.update(data,None,None,iters=50,latent_iters=1,lr=1.0,verbose=True)
-#model.update(data,None,None,iters=10,latent_iters=1,lr=1)
-print('Making Movie')
-f = r"./rotator_movie.mp4"
-ar = animate_results('particular',f).make_movie(model, data, (0,))
 
+print('Making Movie')
+#f = r"c://Users/brain/OneDrive/Desktop/wil.mp4"
+f = r"wil.mp4"
+animate_results('particular',f).make_movie(model, data, list(range(data.shape[1])))
 sbz=model.px.mean()
 B = model.obs_model.obs_dist.mean()
 if model.regression_dim==1:
     roles = B[...,:-1]@sbz + B[...,-1:]
 else:
     roles = B@sbz 
-sbz = sbz.squeeze(-3).squeeze(-1)
-roles = roles.squeeze(-1)[...,0:2]
+sbz = sbz.squeeze()
+roles = roles.squeeze()[...,0:2]
 
 batch_num = 0
 temp1 = data[:,batch_num,:,0]
@@ -104,9 +86,6 @@ for j in range(model.number_of_objects):
     plt.show()
 
 
-len_data = data
-len_model = model
-
 run_time = time.time()-start_time
 print('Total Run Time:  ',run_time)
 
@@ -125,5 +104,5 @@ print('Total Run Time:  ',run_time)
 # scatter.set_offsets(data[fn%T, fn//T,:,:].numpy())
 # scatter.set_array(assignments[fn%T, fn//T,:].numpy())
 # scatter.set_alpha(confidence[fn%T, fn//T,:].numpy())
+# plt.savefig('lenia0.png')
 
-# plt.plot(model.ELBO_save)

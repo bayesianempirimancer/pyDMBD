@@ -5,7 +5,7 @@ from matplotlib.animation import FuncAnimation, FFMpegWriter
 from matplotlib import cm 
 from simulations.NewtonsCradle import NewtonsCradle
 
-dmodel = NewtonsCradle(n_balls=5,ball_size=0.2,Tmax=500,batch_size=20,g=1,leak=0.05/8,dt=0.05,include_string=False) 
+dmodel = NewtonsCradle(n_balls=5,ball_size=0.2,Tmax=500,batch_size=40,g=1,leak=0.05/8,dt=0.05,include_string=False) 
 
 data_temp = dmodel.generate_data('random')[0]
 data_0 = data_temp[0::5]
@@ -28,9 +28,12 @@ data_12 = data_temp[0::5]
 # data_temp = dmodel.generate_data('1 + 3 ball object')[0]
 # data_13 = data_temp[0::5]
 
-datas = (data_1,data_2,data_11,data_12,data_22)#,data_3,data_4,data_11,data_12,data_13,data_22,data_23)
+datas = (data_0,data_1,data_2,data_11,data_12,data_22)#,data_3,data_4,data_11,data_12,data_13,data_22,data_23)
 dy = torch.zeros(2)
-dy[1] = 1.0
+delta = 0.5
+xlim = (-1.5,1.5)
+ylim = (-1.2+delta,0.2+delta)
+dy[1] = delta
 new_datas = ()
 for k,data in enumerate(datas):
     data = data + dy
@@ -67,10 +70,11 @@ datas = new_datas
 #     model.update(data,None,None,iters=20,latent_iters=1,lr=0.5)
 #     ELBO.append(model.ELBO())
 
-data = torch.cat(datas[0:6],dim=1)
+data = torch.cat(datas[3:5],dim=1).clone().detach()
+data = torch.cat((datas[0],data),dim=1).clone().detach()
 print('simulations complete')
 
-model = DMBD(obs_shape=data.shape[-2:],role_dims=(2,2,2),hidden_dims=(4,4,4),batch_shape=(),regression_dim = -1, control_dim=0)
+model = DMBD(obs_shape=data.shape[-2:],role_dims=(8,8,8),hidden_dims=(4,4,4),batch_shape=(),regression_dim = -1, control_dim=0)
 # model0 = DMBD(obs_shape=data.shape[-2:],role_dims=(20,0,0),hidden_dims=(10,0,0),batch_shape=(),regression_dim = -1, control_dim=0)
 # model0.update(data,None,None,iters=2*iters,latent_iters=1,lr=0.5,verbose=True)
 # f = r"./cradle0.mp4"
@@ -86,7 +90,7 @@ h3 = h2+ model.hidden_dims[2]
 batch_num = 50
 
 for i in range(iters):
-    model.update(data,None,None,iters=1,latent_iters=1,lr=0.25,verbose=True)
+    model.update(data,None,None,iters=1,latent_iters=1,lr=0.5,verbose=True)
 
 #    batch_num = torch.randint(0,data.shape[1],(1,)).item()
     sbz=model.px.mean()
@@ -112,8 +116,8 @@ for i in range(iters):
     plt.scatter(roles[:,batch_num,list(range(0,r1)),0],roles[:,batch_num,list(range(0,r1)),1],color='r',alpha=0.25)
     plt.scatter(roles[:,batch_num,list(range(r1,r2)),0],roles[:,batch_num,list(range(r1,r2)),1],color='g',alpha=0.25)
     plt.scatter(roles[:,batch_num,list(range(r2,r3)),0],roles[:,batch_num,list(range(r2,r3)),1],color='b',alpha=0.25)
-    plt.xlim(-1.6,1.6)
-    plt.ylim(-0.2,1.0)
+    plt.xlim(xlim)
+    plt.ylim(ylim)
     plt.show()
     # plt.plot(roles[:,batch_num,list(range(0,r1)),2],roles[:,batch_num,list(range(0,r1)),3],color='b')
     # plt.plot(roles[:,batch_num,list(range(r1,r2)),2],roles[:,batch_num,list(range(r1,r2)),3],color='g')
@@ -176,8 +180,8 @@ print('Generating Movie...')
 # f = r"C://Users/brain/OneDrive/Desktop/cradle.mp4"
 # f = r"C://Users/brain/Desktop/cradle.mp4"
 f = r"./cradle.mp4"
-ar = animate_results('sbz',f, xlim = (-1.5,1.5), ylim = (-0.2,1.2), fps=10)
-ar.make_movie(model, data, (0,20,40,60,80))#,120))#,60,61,80,81))
+ar = animate_results('sbz',f, xlim = xlim, ylim = ylim, fps=10)
+ar.make_movie(model, data, (0,20,40,60,80,100))#,120))#,60,61,80,81))
 
 batch_num = 40
 plt.scatter(data[:,batch_num,:,0],data[:,batch_num,:,1],cmap='rainbow_r',c=model.obs_model.p.argmax(-1)[:,batch_num,:])

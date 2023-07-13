@@ -6,9 +6,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from models.DynamicMarkovBlanketDiscovery import *
 
-data = torch.load('./data/flame_even_smaller.pt')
+data = torch.load('./data/flame_even_smaller.pt').clone().detach()
 
-model = DMBD(obs_shape=data.shape[-2:],role_dims=(2,2,2),hidden_dims=(4,4,4),batch_shape=(),regression_dim = -1, control_dim=0,number_of_objects=1)
+model = DMBD(obs_shape=data.shape[-2:],role_dims=(3,3,3),hidden_dims=(4,4,4),batch_shape=(),regression_dim = -1, control_dim=0,number_of_objects=1)
 
 from matplotlib.colors import ListedColormap, Normalize
 cmap = ListedColormap(['red', 'green', 'blue'])
@@ -69,7 +69,7 @@ for i in range(10):
     axs[0].plot(zz[:,batch_num,-1:],'r',label='s')
     axs[0].plot(bb[:,batch_num,-1:],'g',label='b')
     axs[0].plot(ss[:,batch_num,-1:],'b',label='z')
-    axs[0].set_title('Top PC Score')
+    axs[0].set_title('Top PC Scores')
     # handles, labels = axs[0].get_legend_handles_labels()
     # selected_handles = [handles[0], handles[2], handles[4]]
     # selected_labels = [labels[0], labels[2], labels[4]]
