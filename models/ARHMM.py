@@ -11,9 +11,9 @@ from .HMM import HMM
 from .dists import Delta
 
 class ARHMM(HMM):
-    def __init__(self,dim,n,p,batch_shape = (),pad_X=True):
-        dist = MatrixNormalWishart(torch.zeros(batch_shape + (dim,n,p),requires_grad=False),pad_X=pad_X)
-        super().__init__(dist)
+    def __init__(self,dim,n,p,batch_shape = (),pad_X=True,X_mask = None, mask=None, transition_mask=None):
+        dist = MatrixNormalWishart(torch.zeros(batch_shape + (dim,n,p),requires_grad=False),pad_X=pad_X,X_mask=X_mask,mask=mask)
+        super().__init__(dist,transition_mask=transition_mask)
         
     def obs_logits(self,XY,t=None):
         if t is not None:
@@ -37,9 +37,9 @@ class ARHMM(HMM):
         return invSigma_x_x, invSigmamu_x, Residual
 
 class ARHMM_prXY(HMM):
-    def __init__(self,dim,n,p,batch_shape = (),X_mask = None, mask=None,pad_X=True):
+    def __init__(self,dim,n,p,batch_shape = (),X_mask = None, mask=None,pad_X=True, transition_mask = None):
         dist = MatrixNormalWishart(torch.zeros(batch_shape + (dim,n,p),requires_grad=False),mask=mask,X_mask=X_mask,pad_X=pad_X)
-        super().__init__(dist)
+        super().__init__(dist,transition_mask = transition_mask)
         
     def obs_logits(self,XY):
         return self.obs_dist.Elog_like_given_pX_pY(XY[0],XY[1])
@@ -57,11 +57,11 @@ class ARHMM_prXY(HMM):
 
 
 class ARHMM_prXRY(HMM):   # Assumes that R and Y are observed
-    def __init__(self,dim,n,p1,p2,batch_shape=(),mask=None,X_mask = None, pad_X=False):
+    def __init__(self,dim,n,p1,p2,batch_shape=(),mask=None,X_mask = None, transition_mask = None, pad_X=False):
         self.p1 = p1
         self.p2 = p2
         dist = MatrixNormalWishart(torch.zeros(batch_shape + (dim,n,p1+p2),requires_grad=False),mask=mask,X_mask=X_mask,pad_X=pad_X)
-        super().__init__(dist)
+        super().__init__(dist,transition_mask=transition_mask)
 
     def Elog_like(self,XRY):
         return (self.obs_logits(XRY)*self.p).sum(-1)

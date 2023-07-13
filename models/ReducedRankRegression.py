@@ -15,13 +15,13 @@ import numpy as np
 from .dists import MatrixNormalWishart, MatrixNormalGamma
 from .dists import NormalGamma, NormalInverseWishart
 from .dists import MultivariateNormal_vector_format 
-from .MVN_ard  import MVN_ard
-
+from .dists import MVN_ard
 from .dists import Delta
+
+print('Reduced Rank Regression:  need to marginalize over U instead of using VB for prediction')
 
 class ReducedRankRegression():
     def __init__(self,n,p,dim,batch_shape = (),pad_X=False,independent = False):
-        print('Reduced Rank Regression:  probably should eliminate U')
         self.n=n
         self.p=p
         self.dim=dim

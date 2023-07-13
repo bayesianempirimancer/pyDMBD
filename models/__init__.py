@@ -2,6 +2,7 @@ from .dists import *
 from .ARHMM import *
 from .BayesianFactorAnalysis import *
 from .BayesianTransformer import *
+from .BlockFactorAnalysis import *
 from .dHMM import *
 from .dMixture import *
 from .dMixtureofLinearTransforms import *
@@ -12,9 +13,7 @@ from .LDS_px import *
 from .LDS import *
 from .MixLDS import *
 from .MixtureofLinearTransforms import *
-from .MixtureofMatrixNormalGammas import *
 from .MultiNomialLogisticRegression import *
-from .MVN_ard import *
 from .NLRegression_Multinomial import *
 from .NLRegression import *
 from .NormalSparse import *

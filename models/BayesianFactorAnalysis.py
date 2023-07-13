@@ -18,7 +18,7 @@ class BayesianFactorAnalysis():
     # This method updates the latent variables of the model
     def update_latents(self, Y):
         # Compute the expected log-likelihood of the data given the latent variables
-        invSigma, invSigmamu, Res = self.A.Elog_like_X(Y.view(Y.shape + (1,)))
+        invSigma, invSigmamu, Res = self.A.Elog_like_X(Y.unsqueeze(-1))
         # Update the prior distribution over the latent variables
         self.pz = MultivariateNormal_vector_format(invSigma=invSigma + torch.eye(self.latent_dim, requires_grad=False), invSigmamu=invSigmamu)  # sum over roles
         self.logZ = Res - self.pz.Res()
@@ -72,9 +72,5 @@ class BayesianFactorAnalysis():
     # This method computes the Kullback-Leibler divergence between the prior distribution over the latent variables and the true prior
     def KLqprior(self):
         return self.A.KLqprior()  # + self.alpha.KLqprior()
-
-
-
-
 
 

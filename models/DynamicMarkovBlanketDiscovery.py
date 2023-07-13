@@ -85,11 +85,7 @@ class DMBD(LinearDynamicalSystems):
             self.obs_model = ARHMM_prXRY(role_dim, obs_dim, hidden_dim, regression_dim, batch_shape = batch_shape + (n_obs,), X_mask = B_mask.unsqueeze(0).sum(-2,True)>0,pad_X=False).to_event(1)
             role_mask = role_mask.unsqueeze(0)
         else:   
-            self.obs_model = ARHMM_prXRY(role_dim, obs_dim, hidden_dim, regression_dim, batch_shape = batch_shape, X_mask = B_mask.sum(-2,True)>0,pad_X=False)
-#        self.obs_model.transition.alpha_0 = self.obs_model.transition.alpha_0 + 10*torch.eye(role_dim,requires_grad=False)
-        self.obs_model.transition.alpha_0 = self.obs_model.transition.alpha_0*role_mask
-        self.obs_model.transition_mask = role_mask
-        self.obs_model.transition.alpha = self.obs_model.transition.alpha*role_mask
+            self.obs_model = ARHMM_prXRY(role_dim, obs_dim, hidden_dim, regression_dim, batch_shape = batch_shape, X_mask = B_mask.sum(-2,True)>0,transition_mask = role_mask,pad_X=False)
 
         self.B = self.obs_model.obs_dist
 #        self.B.mu = torch.randn_like(self.B.mu,requires_grad=False)*self.B.X_mask/np.sqrt(np.sum(hidden_dims)/len(hidden_dims))

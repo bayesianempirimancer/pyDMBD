@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from .MVN_ard import MVN_ard
+from .dists import MVN_ard
 from .dists import MultivariateNormal_vector_format
 
 class MultiNomialLogisticRegression():
@@ -144,6 +144,11 @@ class MultiNomialLogisticRegression():
             KL = KL.sum(-1)
         return KL
 
+    def weights(self):
+        if self.pad_X is True:
+            mu = self.beta.mean()[...,:-1,0]
+        return 2*mu - mu.cumsum(-2)
+
     def Elog_like_pX(self,pX,Y):  # assumes pX is in vector format
         if self.pad_X is True:
             EX = pX.mean()
@@ -231,7 +236,7 @@ class MultiNomialLogisticRegression():
             Yt = Yt.unsqueeze(-2)        
         return self.Elog_like(X,Yt).movedim(0,-1)
 
-    def log_predict_pX(self,pX):  # slower than log_predict_1 because some calculations are repeated
+    def log_forward(self,pX):  # slower than log_predict_1 because some calculations are repeated
         sample_shape = pX.shape[:-2]
         Yt = torch.eye(self.n+1)
         for i in range(len(sample_shape)):
@@ -294,10 +299,10 @@ class MultiNomialLogisticRegression():
         psb = psb/psb.sum(-1,True)
         return psb
 
-    def predict_pX(self,pX):
+    def forward(self,pX):
         # lower bounds the probability of each class by approximately integrating out
         # the pg augmentation variable using q(w) = pg(w|b,<psi^2>.sqrt())
-        lnpsb = self.log_predict_pX(pX)
+        lnpsb = self.log_forward(pX)
         psb = (lnpsb-lnpsb.max(-1,True)[0]).exp()
         psb = psb/psb.sum(-1,True)
         return psb
@@ -376,9 +381,6 @@ class MultiNomialLogisticRegression():
 
     #     beta = self.beta.mean()
     #     bbt = self.beta.EXXT()
-
-
-
     #     invSigmamu = (YmN.view(YmN.shape + (1,1))*self.beta.mean()).sum(-3)
     #     for i in range(iters):
     #         invSigma = (self.beta.EXXT()*Ew.view(Ew.shape+ (1,1))).sum(-3)
@@ -390,65 +392,4 @@ class MultiNomialLogisticRegression():
 
     #     pX = MultivariateNormal_vector_format(mu = mu, Sigma = Sigma, invSigma = invSigma, invSigmamu = invSigmamu)
     #     return pX            
-
-
-
-# print('Test Multinomial Logistic Regression')
-# from  matplotlib import pyplot as plt
-# from dists import Delta
-# #from MultiNomialLogisticRegression import *
-# n=4
-# p=10
-# num_samples = 200
-# W = 4*torch.randn(n,p)/np.sqrt(p)
-# W[-1,:]=0
-# X = torch.randn(num_samples,p)
-# B = torch.randn(n).sort()[0]/2*0
-
-
-# logpY = X@W.transpose(-2,-1)+B
-# pY = (logpY - logpY.logsumexp(-1,True)).exp()
-
-# Y = torch.distributions.OneHotCategorical(logits = logpY).sample()
-
-# model = MultiNomialLogisticRegression(n,p,batch_shape=(),pad_X=True)
-# if model.batch_shape != ():
-#     X = X.unsqueeze(-2)
-#     Y = Y.unsqueeze(-2)
-# model.raw_update(X,Y,iters=20,verbose=True)
-# model.update(Delta(X.unsqueeze(-1)),Y,iters =4)
-# What = model.beta.mean().squeeze()
-
-# print('Predictions by lowerbounding with q(w|b,<psi^2>)')
-# psb = model.predict(X)
-# for i in range(n):
-#     plt.scatter(pY.log()[:,i],psb.log()[:,i])    
-# plt.plot([pY.log().min(),0],[pY.log().min(),0])
-# plt.show()
-
-
-
-# # print('Percent Correct   = ',((Y.argmax(-1)==psb.argmax(-1)).sum()/Y.shape[0]).data*100)
-# # # for i in range(n):
-# # #     plt.scatter(pY[:,i],psb[:,i])    
-# # # plt.plot([0,1],[0,1])
-# # # plt.show()
-
-# # # print('Predictions by marginaling out q(beta) with w = <w|b,<psi^2>>')
-# # # psb2 = model.predict_2(X)
-# # # for i in range(n):
-# # #     plt.scatter(pY.log()[:,i],psb2.log()[:,i])    
-# # # plt.plot([pY.log().min(),0],[pY.log().min(),0])
-# # # plt.show()
-# # # psb2 = model.predict(X)
-# # # # for i in range(n):
-# # # #     plt.scatter(pY[:,i],psb2[:,i])    
-# # # # plt.plot([0,1],[0,1])
-# # # # plt.show()
-# # # print('Percent Correct_2 = ',((Y.argmax(-1)==psb2.argmax(-1)).sum()/Y.shape[0]).data*100)
-
-# for i in range(n-1):
-#     plt.errorbar(W[i,:],model.beta.mean().squeeze(-1)[i,:-1],yerr=2*model.beta.ESigma().diagonal(dim1=-2,dim2=-1)[i,:-1].sqrt(),fmt='o',linestyle='None')
-# plt.plot([W.min(),W.max()],[W.min(),W.max()])
-# plt.show()
 

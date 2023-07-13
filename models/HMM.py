@@ -18,7 +18,8 @@ class HMM():
         self.transition_mask = transition_mask
         self.ptemp = ptemp
 
-        self.transition = Dirichlet(0.5*torch.ones(self.batch_shape+(self.hidden_dim,self.hidden_dim),requires_grad=False)+1.0*torch.eye(self.hidden_dim,requires_grad=False)).to_event(1)
+        self.transition = Dirichlet(0.5*torch.ones(self.batch_shape+(self.hidden_dim,self.hidden_dim),requires_grad=False)+0.5*torch.eye(self.hidden_dim,requires_grad=False)).to_event(1)
+#        self.transition = Dirichlet(0.5*torch.ones(self.batch_shape+(self.hidden_dim,self.hidden_dim),requires_grad=False)).to_event(1)
         if transition_mask is not None:
             self.transition.alpha_0 = self.transition.alpha_0 * transition_mask
             self.transition.alpha = self.transition.alpha * transition_mask
